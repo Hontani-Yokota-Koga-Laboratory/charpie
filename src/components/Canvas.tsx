@@ -132,12 +132,19 @@ export function Canvas() {
   // ── wheel: pan / zoom (needs a non-passive listener)
   useEffect(() => {
     const el = svgRef.current!;
+    // a trackpad stream keeps its classification until it pauses, so a straight vertical swipe can't flip to zoom midway
+    let trackpadUntil = 0;
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
       const s = useStore.getState();
       const v = s.view;
-      // mouse wheel / pinch (ctrlKey) zoom; trackpad two-finger scroll (sideways component) and Shift pan
-      const pan = !(e.ctrlKey || e.metaKey) && (e.shiftKey || e.deltaX !== 0);
+      // mouse wheel / pinch (ctrlKey) zoom; trackpad two-finger scroll and Shift pan.
+      // Trackpad: any sideways component, or Chrome/Safari's wheelDeltaY === -3 * deltaY (a mouse notch reports ±120); Firefox uses pixel mode only for trackpads
+      const now = performance.now();
+      const wdy = (e as WheelEvent & { wheelDeltaY?: number }).wheelDeltaY;
+      const trackpad = e.deltaX !== 0 || (wdy ? wdy === -3 * e.deltaY : e.deltaMode === 0) || now < trackpadUntil;
+      if (trackpad && !(e.ctrlKey || e.metaKey)) trackpadUntil = now + 300;
+      const pan = !(e.ctrlKey || e.metaKey) && (e.shiftKey || trackpad);
       if (!pan) {
         const r = el.getBoundingClientRect();
         const px = e.clientX - r.left,
