@@ -5,7 +5,8 @@ import type { Doc, Port, ShapeKind } from '../dsl/types';
 import { boxContains, boxesIntersect, center, portPoint, type Box, type Pt } from '../geom/geom';
 import type { Layout } from '../layout';
 import { useStore } from '../store';
-import { EdgeLabel, EdgeShape, NodeShape, diagramBounds } from './Diagram';
+import { EdgeLabel, EdgeShape, ImageHrefContext, NodeShape, diagramBounds } from './Diagram';
+import { assetHref, insertImages, isImageFile } from '../images';
 import { InlineEditor } from './InlineEditor';
 
 type Handle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
@@ -24,8 +25,9 @@ export const DEFAULT_SIZE: Record<ShapeKind, [number, number]> = {
   cross: [60, 60],
   plus: [60, 60],
   text: [120, 36],
+  image: [160, 120],
 };
-export const ID_STEM: Record<ShapeKind, string> = { rect: 'box', round: 'box', ellipse: 'oval', diamond: 'cond', trap: 'trap', para: 'io', hex: 'hex', cross: 'cross', plus: 'plus', text: 'note' };
+export const ID_STEM: Record<ShapeKind, string> = { rect: 'box', round: 'box', ellipse: 'oval', diamond: 'cond', trap: 'trap', para: 'io', hex: 'hex', cross: 'cross', plus: 'plus', text: 'note', image: 'img' };
 
 interface Guide {
   x1: number;
@@ -80,6 +82,8 @@ export function Canvas() {
   const hoverIssue = useStore((s) => s.hoverIssue);
   const focusIssue = useStore((s) => s.focusIssue);
   const grid = useStore((s) => s.doc.settings.grid);
+  const wsFile = useStore((s) => (s.workspace.on ? s.workspace.file : null));
+  const imageHref = useMemo(() => assetHref(wsFile), [wsFile]);
 
   const svgRef = useRef<SVGSVGElement>(null);
   const gesture = useRef<Gesture | null>(null);
@@ -758,10 +762,19 @@ export function Canvas() {
   const emptyDoc = layout.nodes.length === 0;
 
   return (
-    <>
+    <ImageHrefContext.Provider value={imageHref}>
       <svg
         ref={svgRef}
         className={canvasCls}
+        onDragOver={(e) => {
+          if ([...e.dataTransfer.items].some((i) => i.kind === 'file')) e.preventDefault();
+        }}
+        onDrop={(e) => {
+          const files = [...e.dataTransfer.files].filter(isImageFile);
+          if (!files.length) return;
+          e.preventDefault();
+          insertImages(files, toWorld(e.clientX, e.clientY));
+        }}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
@@ -934,7 +947,7 @@ export function Canvas() {
           </div>
         </div>
       )}
-    </>
+    </ImageHrefContext.Provider>
   );
 }
 
@@ -961,7 +974,7 @@ function IssueSpot({ layout, issue, z }: { layout: Layout; issue: { nodes: strin
 export function smallestContainer(layout: Layout, box: Box, exclude: Set<string>): string | undefined {
   let best: { id: string; area: number } | undefined;
   for (const n of layout.nodes) {
-    if (exclude.has(n.id) || n.kind === 'text') continue;
+    if (exclude.has(n.id) || n.kind === 'text' || n.kind === 'image') continue;
     if (!boxContains(n.box, box)) continue;
     if (n.box.w * n.box.h <= box.w * box.h * 1.2) continue;
     const area = n.box.w * n.box.h;

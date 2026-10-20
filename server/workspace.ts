@@ -1,7 +1,39 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { ServerResponse } from 'node:http';
 import { hashText } from '../src/hash';
+
+export const IMAGE_MIME: Record<string, string> = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.svg': 'image/svg+xml',
+  '.avif': 'image/avif',
+  '.bmp': 'image/bmp',
+};
+
+/** Image shapes' `src=` read relative to the .charpie file (`dir`), embedded as data: URIs for exports. */
+export function embedImages(dir: string, srcs: string[], within?: string): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const src of srcs) {
+    if (/^(https?:|data:)/.test(src)) {
+      out.set(src, src);
+      continue;
+    }
+    const abs = path.resolve(dir, src);
+    const type = IMAGE_MIME[path.extname(abs).toLowerCase()];
+    if (!type || (within && !abs.startsWith(within + path.sep))) continue;
+    try {
+      out.set(src, `data:${type};base64,${fs.readFileSync(abs).toString('base64')}`);
+    } catch {
+      /* missing file: drawn as a placeholder */
+    }
+  }
+  return out;
+}
 
 export interface BrowserState {
   file: string | null;
@@ -86,6 +118,33 @@ export class Workspace {
     this.known.set(rel, src);
     if (isNew) this.broadcast({ type: 'files', files: this.list() });
     return rel;
+  }
+
+  /** An image referenced from `file` (relative to its folder); must stay inside the workspace. */
+  asset(file: string, src: string): { abs: string; type: string } {
+    const dir = path.dirname(this.resolve(file).abs);
+    const abs = path.resolve(dir, src.replace(/\\/g, '/'));
+    const type = IMAGE_MIME[path.extname(abs).toLowerCase()];
+    if (!abs.startsWith(this.root + path.sep) || !type) throw new HttpError(400, `invalid image path: ${src}`);
+    if (!fs.existsSync(abs)) throw new HttpError(404, `image not found: ${src}`);
+    return { abs, type };
+  }
+
+  /**
+   * Save a pasted / dropped image into `assets/` next to `file`. Named by content hash, so pasting the
+   * same picture twice reuses one file. Returns the path to write in `src=` (relative to the .charpie).
+   */
+  saveAsset(file: string, data: Buffer, ext: string, name?: string): string {
+    const dir = path.dirname(this.resolve(file).abs);
+    const stem = (name ?? '').replace(/\.[^.]*$/, '').replace(/[^\p{L}\p{N}_-]+/gu, '_').replace(/^_+|_+$/g, '').slice(0, 40);
+    const hash = crypto.createHash('sha1').update(data).digest('hex').slice(0, 10);
+    const base = `${stem ? stem + '-' : ''}${hash}${ext}`;
+    const abs = path.join(dir, 'assets', base);
+    if (!fs.existsSync(abs)) {
+      fs.mkdirSync(path.dirname(abs), { recursive: true });
+      fs.writeFileSync(abs, data);
+    }
+    return `assets/${base}`;
   }
 
   /** Default file for API calls: explicit > browser's open file > the only file. */

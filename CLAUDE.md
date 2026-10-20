@@ -42,8 +42,9 @@ rect    eq   "更新則\n$\theta_{k+1} = \theta_k - \eta\nabla f$"  at (0, 400) 
 
 - ラベル（図形・矢印）の `$...$` はインライン TeX。`$...$` の中ではバックスラッシュは 1 つでそのまま書く（`\frac` `\nabla` など。`\n` も改行ではなく TeX）。外側で `$` そのものを出すときは `\$`。数式は折り返されない。組めない数式は原文のまま表示され、`check` が `tex` 警告を出す。TikZ 書き出しでは `$...$` がそのまま渡る。
 
-- 図形: `rect round ellipse diamond trap para hex cross plus text`（`cross` = ⊗ / `plus` = ⊕、別名 `otimes` `oplus`。ラベル無しで `cross s at (x, y) size 60x60` のように書く）
-- 図形属性: `fill stroke text lw dash(solid|dashed|dotted) font(auto|px) weight(bold|light) valign(top|middle|bottom) in(親ID) overlap=allow skew radius opacity dir pad halign rotate`
+- 図形: `rect round ellipse diamond trap para hex cross plus text image`（`cross` = ⊗ / `plus` = ⊕、別名 `otimes` `oplus`。ラベル無しで `cross s at (x, y) size 60x60` のように書く）
+- 画像: `image p "代替テキスト" at (x, y) size 160x120 src="assets/x.png" fit=cover`。`src` は .charpie からの相対パス（か URL）、`fit=contain|cover|fill`（既定 contain）。ラベルは描かれない（文字の検査対象外）。枠線は `stroke=` を付けたときだけ。ブラウザでは Ctrl+V / ドロップ / ツールバーで追加でき、`assets/<名前>-<hash>.png` に保存される（API: `POST /api/asset`）。`check` は画像ファイルが無いと警告する。外部の画像を使うときは `assets/` にコピーしてから参照する。
+- 図形属性: `fill stroke text lw dash(solid|dashed|dotted) font(auto|px) weight(bold|light) valign(top|middle|bottom) in(親ID) overlap=allow skew radius opacity dir pad halign rotate src fit`
   - `rotate=90|-90|180` は文字だけを回す（図形は回らない）。`-90` は下から上に読む縦書き（縦軸ラベルなど）、`90` は上から下。`halign`/`valign` は回転後も画面上の左右上下の意味。
   - `dir=up|down|left|right` は trap の短い辺の向き（`trap enc "Encoder" ... dir=right` で右すぼまりの横向き台形）。`pad=N` はその図形だけ文字の余白を変える（グループ見出しを枠線から離すなど）。`halign=left|right` で文字を左右に寄せる（グループ見出しを左上に置くと矢印と干渉しにくい）。
 - 矢印属性: `route bend stroke lw dash text font fromat toat ignore`（`toat=0.3` で到着ポートを辺の 30% の位置へずらす。大きな枠の上辺の好きな位置に矢印を落とすときに使う）

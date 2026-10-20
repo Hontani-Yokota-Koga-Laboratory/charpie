@@ -7,8 +7,8 @@ import { analyze, applyOps, issuesOut, measureNodes, type NodeMeasure } from './
 import { createApi } from './api';
 import { fontMeasure } from './measure';
 import { svgToPng } from './png';
-import { Workspace } from './workspace';
-import { exportSvg, exportTikz } from '../src/exportFormats';
+import { embedImages, Workspace } from './workspace';
+import { exportSvg, exportTikz, imageSources } from '../src/exportFormats';
 
 const HELP = `charpie — text-first diagram editor
 
@@ -91,6 +91,16 @@ async function serve(args: string[]) {
   process.on('SIGTERM', stop);
 }
 
+/** Image shapes whose `src=` file does not exist (relative to the .charpie file). */
+function missingImages(file: string, src: string): string[] {
+  const a = analyze(src, fontMeasure);
+  const dir = path.dirname(path.resolve(file));
+  return a.layout.nodes
+    .filter((n) => n.kind === 'image')
+    .filter((n) => !n.style.src || (!/^(https?:|data:)/.test(n.style.src) && !fs.existsSync(path.resolve(dir, n.style.src))))
+    .map((n) => `${file}:${n.def.line + 1}: warning: 画像「${n.id}」の${n.style.src ? `ファイル ${n.style.src} がありません` : ' src= がありません'} [image]`);
+}
+
 function check(args: string[]) {
   const asJson = flag(args, '--json');
   if (!args.length) throw new Error('usage: charpie check <file...>');
@@ -100,8 +110,9 @@ function check(args: string[]) {
     const src = fs.readFileSync(f, 'utf8');
     const r = formatIssues(f, src);
     errors += r.errors;
+    const missing = missingImages(f, src);
     if (asJson) out[f] = r.issues;
-    else if (r.lines.length) console.log(r.lines.join('\n'));
+    else if (r.lines.length || missing.length) console.log([...r.lines, ...missing].join('\n'));
     else console.log(`${f}: ok`);
     if (!asJson && r.ignored) console.log(`${f}: (${r.ignored} ignored via ignore=)`);
   }
@@ -147,13 +158,15 @@ async function exportCmd(args: string[]) {
   const out = arg(args, '-o') ?? arg(args, '--out');
   const fmt = arg(args, '--format', '-f') ?? (out?.endsWith('.png') ? 'png' : out?.endsWith('.tex') ? 'tikz' : 'svg');
   const a = analyze(fs.readFileSync(args[0], 'utf8'), fontMeasure);
+  const images = embedImages(path.dirname(path.resolve(args[0])), imageSources(a.layout));
+  const svg = () => exportSvg(a.layout, '#ffffff', (s) => images.get(s));
   if (fmt === 'png') {
-    const png = await svgToPng(exportSvg(a.layout), Number(arg(args, '--scale') ?? 2) || 2);
+    const png = await svgToPng(svg(), Number(arg(args, '--scale') ?? 2) || 2);
     if (out) fs.writeFileSync(out, png);
     else process.stdout.write(png);
     return;
   }
-  const text = fmt === 'tikz' ? exportTikz(a.layout) : exportSvg(a.layout);
+  const text = fmt === 'tikz' ? exportTikz(a.layout) : svg();
   if (out) fs.writeFileSync(out, text);
   else process.stdout.write(text);
 }

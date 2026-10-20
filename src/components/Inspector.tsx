@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { useStore, type State } from '../store';
 import { isValidId, pointText, renameNode, setEdgeEnds, setSetting, setEdgeLabel, setEdgesAttr, setEdgesOp, setNodeLabel, setNodesAttr, setNodesGeom, setNodesKind, type Geom } from '../dsl/patch';
+import { assetHref } from '../images';
 import { SHAPE_KINDS, type ArrowOp, type Doc, type ShapeKind } from '../dsl/types';
 import { align, distribute, matchSize, stack, type AlignMode } from '../ops/arrange';
 import { autoFix } from '../check/resolve';
@@ -101,6 +102,41 @@ export function Inspector() {
   );
 }
 
+/** Image shapes: the file, how it fills the box, and snapping the box to the picture's aspect ratio. */
+function ImageSection({ n, setAttr, setH }: { n: State['layout']['nodes'][number]; setAttr: (k: string, v: string | undefined) => void; setH: (h: number) => void }) {
+  const file = useStore((s) => (s.workspace.on ? s.workspace.file : null));
+  const fitAspect = () => {
+    const href = n.style.src && assetHref(file)(n.style.src);
+    if (!href) return;
+    const img = new Image();
+    img.onload = () => img.naturalWidth && setH(Math.round((n.box.w * img.naturalHeight) / img.naturalWidth));
+    img.onerror = () => useStore.getState().notify(`画像を読めません: ${n.style.src}`, 'warn');
+    img.src = href;
+  };
+  return (
+    <div className="section">
+      <div className="section-label">画像</div>
+      <LiveText key={n.id} value={n.def.attrs.src ?? ''} onChange={(v) => setAttr('src', v || undefined)} placeholder="assets/x.png（.charpie からの相対パス）" />
+      <div className="row" style={{ marginTop: 6 }}>
+        <label>収め方</label>
+        <Seg
+          small
+          value={n.style.fit}
+          onChange={(v) => setAttr('fit', v === 'contain' ? undefined : v)}
+          options={[
+            { v: 'contain', label: '全体', tip: '縦横比を保って全体を表示（fit=contain）' },
+            { v: 'cover', label: '切抜', tip: '縦横比を保って枠を埋める（fit=cover）' },
+            { v: 'fill', label: '伸縮', tip: '枠に合わせて伸縮（fit=fill）' },
+          ]}
+        />
+      </div>
+      <button className="btn" style={{ marginTop: 6 }} onClick={fitAspect}>
+        縦横比を画像に合わせる
+      </button>
+    </div>
+  );
+}
+
 function NodeInspector({ nodes, doc }: { nodes: State['layout']['nodes']; doc: Doc }) {
   const ids = nodes.map((n) => n.id);
   const first = nodes[0];
@@ -162,15 +198,17 @@ function NodeInspector({ nodes, doc }: { nodes: State['layout']['nodes']; doc: D
 
       {single && (
         <div className="section">
-          <div className="section-label">ラベル</div>
+          <div className="section-label">{single.kind === 'image' ? '説明（代替テキスト・図には描かれません）' : 'ラベル'}</div>
           <LiveText multiline rows={2} key={single.id} value={single.def.label} onChange={(v) => edit((src, d) => setNodeLabel(src, d, single.id, v))} />
         </div>
       )}
 
+      {single?.kind === 'image' && <ImageSection n={single} setAttr={setAttr} setH={(h) => setGeom({ h })} />}
+
       <div className="section">
         <div className="section-label">形</div>
         <div className="seg small" style={{ display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', width: '100%' }}>
-          {SHAPE_KINDS.map((k) => (
+          {SHAPE_KINDS.filter((k) => k !== 'image').map((k) => (
             <button key={k} className={(first.kind === k ? 'on ' : '') + 'tip tip-bottom'} data-tip={SHAPE_NAMES[k]} style={{ justifyContent: 'center', padding: '5px 0' }} onClick={() => s.apply((src, d) => setNodesKind(src, d, ids, k as ShapeKind))}>
               <ShapeIcon kind={k} size={16} />
             </button>

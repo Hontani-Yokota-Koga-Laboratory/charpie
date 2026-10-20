@@ -138,7 +138,7 @@ export function tokenize(src: string): Tok[] {
 
 // ───────────────────────────── parser ─────────────────────────────
 
-export const NODE_ATTRS = new Set(['fill', 'stroke', 'text', 'lw', 'dash', 'font', 'weight', 'in', 'overlap', 'skew', 'radius', 'opacity', 'valign', 'halign', 'dir', 'pad', 'rotate', 'ignore']);
+export const NODE_ATTRS = new Set(['fill', 'stroke', 'text', 'lw', 'dash', 'font', 'weight', 'in', 'overlap', 'skew', 'radius', 'opacity', 'valign', 'halign', 'dir', 'pad', 'rotate', 'src', 'fit', 'ignore']);
 export const EDGE_ATTRS = new Set(['stroke', 'lw', 'dash', 'route', 'bend', 'text', 'font', 'fromat', 'toat', 'ignore']);
 
 /** Attributes whose value may be a comma-separated list: `ignore=overlap,through`. */
@@ -176,6 +176,8 @@ const KIND_ALIASES: Record<string, ShapeKind> = {
   otimes: 'cross',
   oplus: 'plus',
   label: 'text',
+  img: 'image',
+  picture: 'image',
 };
 
 export function resolveKind(word: string): ShapeKind | undefined {

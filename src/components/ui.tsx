@@ -11,6 +11,15 @@ export function ShapeIcon({ kind, size = 18 }: { kind: ShapeKind; size?: number 
       </svg>
     );
   }
+  if (kind === 'image') {
+    return (
+      <svg width={size} height={size} viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinejoin="round" strokeLinecap="round">
+        <rect x={2} y={3} width={14} height={12} rx={1.5} />
+        <circle cx={6.5} cy={7} r={1.3} />
+        <path d="M2.5 13.5l4-4 3 3 2-2 4 4" />
+      </svg>
+    );
+  }
   const box = kind === 'diamond' ? { x: 1.5, y: 2, w: 15, h: 14 } : kind === 'ellipse' ? { x: 1.5, y: 3.5, w: 15, h: 11 } : kind === 'cross' || kind === 'plus' ? { x: 2, y: 2, w: 14, h: 14 } : { x: 1.5, y: 4, w: 15, h: 10 };
   return (
     <svg width={size} height={size} viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinejoin="round">
@@ -30,6 +39,7 @@ export const SHAPE_NAMES: Record<ShapeKind, string> = {
   cross: '⊗（丸に×）',
   plus: '⊕（丸に＋）',
   text: 'テキスト',
+  image: '画像',
 };
 
 /**

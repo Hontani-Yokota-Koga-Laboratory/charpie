@@ -34,7 +34,13 @@ export interface NodeStyle {
   pad?: number;
   /** text rotation in degrees, clockwise (0 | 90 | 180 | 270) */
   rotate: TextRotation;
+  /** image: file path (relative to the .charpie file) or URL */
+  src?: string;
+  /** image: how the picture fills its box */
+  fit: ImageFit;
 }
+
+export type ImageFit = 'contain' | 'cover' | 'fill';
 
 export type TextRotation = 0 | 90 | 180 | 270;
 
@@ -116,6 +122,7 @@ export const NODE_DEFAULTS: NodeStyle = {
   halign: 'center',
   dir: 'up',
   rotate: 0,
+  fit: 'contain',
 };
 
 export const EDGE_DEFAULTS: EdgeStyle = {
@@ -143,7 +150,8 @@ function mergedProps(doc: Doc, classes: string[], attrs: Record<string, string>)
 
 export function nodeStyle(doc: Doc, n: NodeDef): NodeStyle {
   const p = mergedProps(doc, n.classes, n.attrs);
-  const isText = n.kind === 'text';
+  // text and image shapes have no frame unless one is asked for
+  const isText = n.kind === 'text' || n.kind === 'image';
   const font = p.font === undefined || p.font === 'auto' ? undefined : num(p.font, NaN);
   return {
     fill: p.fill ?? (isText ? 'none' : NODE_DEFAULTS.fill),
@@ -161,6 +169,8 @@ export function nodeStyle(doc: Doc, n: NodeDef): NodeStyle {
     dir: p.dir === 'down' || p.dir === 'left' || p.dir === 'right' ? p.dir : 'up',
     pad: p.pad !== undefined && Number.isFinite(Number(p.pad)) && Number(p.pad) >= 0 ? Number(p.pad) : undefined,
     rotate: rotationOf(p.rotate),
+    src: p.src || undefined,
+    fit: p.fit === 'cover' || p.fit === 'fill' ? p.fit : 'contain',
   };
 }
 
@@ -215,7 +225,8 @@ export function layoutNode(doc: Doc, n: NodeDef, measure: Measure, geomOverride?
   const o: ShapeOpts = { skew: style.skew, radius: style.radius, dir: style.dir };
   const tb = textBox(n.kind, box, o, style.pad ?? doc.settings.padding);
   const sideways = style.rotate === 90 || style.rotate === 270;
-  const text = fitText(n.label, sideways ? { w: tb.h, h: tb.w } : tb, {
+  // an image's label is only its alt text: it is not drawn, so it never has to fit
+  const text = fitText(n.kind === 'image' ? '' : n.label, sideways ? { w: tb.h, h: tb.w } : tb, {
     fixed: style.font,
     min: doc.settings.fontmin,
     max: doc.settings.fontmax,

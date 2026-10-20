@@ -67,13 +67,16 @@ rect    api  "API Gateway"  at (120, 80) size 160x60 .accent
 trap    db   "Database"     at (120, 240) size 160x70 fill=#fef3c7
 round   grp  "グループ"      at (0, 0) size 400x300 valign=top
 rect    c1   "子"           at (20, 40) size 100x50 in=grp
+image   p    "病理パッチ"    at (440, 80) size 160x120 src="assets/patch.png" fit=cover
 
 user -> api "request"            # ->  <-  <->  --
 api.s -> db.n route=ortho        # ポート n/e/s/w
 api -> cache route=curve bend=40 dash=dashed
 ```
 
-- 図形: `rect round ellipse diamond trap para hex text`
+- 図形: `rect round ellipse diamond trap para hex text image`
+- 画像: `image` は `src=`（.charpie からの相対パスか URL）の画像を枠に描きます。`fit=contain|cover|fill`（既定 contain）。ラベルは代替テキストで描かれません。枠線は `stroke=` を付けたときだけ。
+  ブラウザでは **Ctrl+V で貼り付け / ファイルをドロップ / ツールバーの画像ボタン** で追加でき、画像は .charpie と同じフォルダの `assets/` に保存されます。SVG / PNG 書き出しには画像が埋め込まれ、TikZ は `\includegraphics`（graphicx）になります。
 - 図形属性: `fill stroke text lw dash font(auto|px) weight valign in overlap=allow skew radius opacity`
 - 矢印属性: `route(straight|curve|ortho) bend stroke lw dash text font`
 

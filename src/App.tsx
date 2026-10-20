@@ -11,6 +11,7 @@ import { initRemote } from './remote';
 import { useMobile } from './useMobile';
 import { MobileSheet } from './components/MobileSheet';
 import { deleteSelection, duplicateSelection } from './actions';
+import { insertImages, isImageFile } from './images';
 
 function isTyping(t: EventTarget | null) {
   return t instanceof HTMLElement && (t.isContentEditable || /INPUT|TEXTAREA|SELECT/.test(t.tagName) || !!t.closest('.cm-editor'));
@@ -61,20 +62,6 @@ function useShortcuts(openHelp: () => void) {
         e.preventDefault();
         return;
       }
-      if (mod && k === 'v') {
-        e.preventDefault();
-        const paste = (text: string) => {
-          const st = useStore.getState();
-          const r = pasteText(st.src, st.doc, text, 24, 24);
-          if (!r.ids.length) return;
-          st.setSource(r.src);
-          st.select({ nodes: r.ids });
-          clipboard = extractText(r.src, useStore.getState().doc, r.ids);
-        };
-        if (navigator.clipboard?.readText) navigator.clipboard.readText().then((t) => paste(t || clipboard), () => paste(clipboard));
-        else paste(clipboard);
-        return;
-      }
       if (mod && k === 'd') {
         e.preventDefault();
         duplicateSelection();
@@ -118,8 +105,29 @@ function useShortcuts(openHelp: () => void) {
         s.setTool(TOOL_KEYS[k]);
       }
     };
+    // Ctrl+V is handled as a paste event: it carries both copied shapes (text) and pictures
+    const onPaste = (e: ClipboardEvent) => {
+      if (isTyping(e.target)) return;
+      const files = [...(e.clipboardData?.files ?? [])].filter(isImageFile);
+      e.preventDefault();
+      if (files.length) {
+        insertImages(files);
+        return;
+      }
+      const text = e.clipboardData?.getData('text/plain') || clipboard;
+      const st = useStore.getState();
+      const r = pasteText(st.src, st.doc, text, 24, 24);
+      if (!r.ids.length) return;
+      st.setSource(r.src);
+      st.select({ nodes: r.ids });
+      clipboard = extractText(r.src, useStore.getState().doc, r.ids);
+    };
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener('paste', onPaste);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('paste', onPaste);
+    };
   }, [openHelp]);
 }
 

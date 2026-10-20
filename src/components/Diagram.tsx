@@ -1,7 +1,37 @@
-import { memo } from 'react';
+import { createContext, memo, useContext } from 'react';
 import { arrowHeadPath, lineAnchor, type EdgeLayout, type Layout, type NodeLayout } from '../layout';
 import { LINE_HEIGHT, FONT_FAMILY, inkCenter, type RichLine } from '../text/fit';
 import type { CSSProperties } from 'react';
+
+/**
+ * Turns an image shape's `src=` into something an <image> can load: the canvas asks the server
+ * (relative to the open file), exports embed data: URIs. Unresolved → drawn as a placeholder.
+ */
+export type ImageHref = (src: string) => string | undefined;
+export const ImageHrefContext = createContext<ImageHref>((src) => (/^(https?:|data:)/.test(src) ? src : undefined));
+
+const PRESERVE = { contain: 'xMidYMid meet', cover: 'xMidYMid slice', fill: 'none' } as const;
+
+function NodeImage({ n, interactive }: { n: NodeLayout; interactive?: boolean }) {
+  const resolve = useContext(ImageHrefContext);
+  const { x, y, w, h } = n.box;
+  const href = n.style.src ? resolve(n.style.src) : undefined;
+  if (!href) {
+    // missing / unresolvable picture: a crossed box so it is obvious and still selectable
+    return (
+      <g style={{ pointerEvents: 'none' }}>
+        <rect x={x} y={y} width={w} height={h} fill="#f1f5f9" stroke="#94a3b8" strokeWidth={1} strokeDasharray="4 3" />
+        <path d={`M${x} ${y}L${x + w} ${y + h}M${x + w} ${y}L${x} ${y + h}`} stroke="#cbd5e1" strokeWidth={1} />
+        {interactive && (
+          <text x={x + w / 2} y={y + h / 2} fontSize={Math.max(9, Math.min(13, w / 12))} fill="#64748b" textAnchor="middle" dominantBaseline="middle" fontFamily={FONT_FAMILY}>
+            {n.style.src ? `画像なし: ${n.style.src}` : 'src= がありません'}
+          </text>
+        )}
+      </g>
+    );
+  }
+  return <image href={href} x={x} y={y} width={w} height={h} preserveAspectRatio={PRESERVE[n.style.fit]} style={{ pointerEvents: 'none' }} />;
+}
 
 const unescapeDollar = (l: string) => (l.includes('\\$') ? l.replace(/\\\$/g, '$') : l);
 
@@ -59,7 +89,7 @@ const DASH = { solid: undefined, dashed: (lw: number) => `${lw * 4} ${lw * 3}`, 
 const dashArray = (d: 'solid' | 'dashed' | 'dotted', lw: number) => (d === 'solid' ? undefined : DASH[d](lw));
 
 export function NodeText({ n, hidden }: { n: NodeLayout; hidden?: boolean }) {
-  if (!n.def.label || hidden) return null;
+  if (!n.def.label || hidden || n.kind === 'image') return null;
   const { size, lines } = n.text;
   const lh = size * LINE_HEIGHT;
   const rot = n.style.rotate;
@@ -108,6 +138,7 @@ export const NodeShape = memo(function NodeShape({ n, hideText, interactive }: {
   const s = n.style;
   return (
     <g data-node={interactive ? n.id : undefined} className={interactive ? 'node' : undefined} opacity={s.opacity}>
+      {n.kind === 'image' && <NodeImage n={n} interactive={interactive} />}
       <path
         d={n.path}
         fill={s.fill === 'none' ? (interactive ? 'transparent' : 'none') : s.fill}
@@ -185,13 +216,13 @@ export function EdgeLabel({ e, bg, interactive }: { e: EdgeLayout; bg: string; i
 }
 
 /** Static diagram (used for export). */
-export function DiagramSvg({ layout, bg, padding = 24 }: { layout: Layout; bg: string | null; padding?: number }) {
+export function DiagramSvg({ layout, bg, padding = 24, images }: { layout: Layout; bg: string | null; padding?: number; images?: ImageHref }) {
   const b = diagramBounds(layout);
   const x = b.x - padding,
     y = b.y - padding,
     w = b.w + padding * 2,
     h = b.h + padding * 2;
-  return (
+  const svg = (
     <svg xmlns="http://www.w3.org/2000/svg" viewBox={`${x} ${y} ${w} ${h}`} width={w} height={h} fontFamily={FONT_FAMILY}>
       {bg && <rect x={x} y={y} width={w} height={h} fill={bg} />}
       {layout.nodes.map((n) => (
@@ -205,6 +236,7 @@ export function DiagramSvg({ layout, bg, padding = 24 }: { layout: Layout; bg: s
       ))}
     </svg>
   );
+  return images ? <ImageHrefContext.Provider value={images}>{svg}</ImageHrefContext.Provider> : svg;
 }
 
 export function diagramBounds(layout: Layout) {

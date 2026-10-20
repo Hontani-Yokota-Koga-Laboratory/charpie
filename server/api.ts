@@ -1,10 +1,12 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { hashText } from '../src/hash';
-import { exportSvg, exportTikz } from '../src/exportFormats';
+import fs from 'node:fs';
+import path from 'node:path';
+import { exportSvg, exportTikz, imageSources } from '../src/exportFormats';
 import { analyze, applyOps, issuesOut, measureNodes, summarize, type IssueOut, type Op } from './core';
 import { helpText } from './help';
 import { fontMeasure } from './measure';
-import { HttpError, type BrowserState, type Workspace } from './workspace';
+import { embedImages, HttpError, IMAGE_MIME, type BrowserState, type Workspace } from './workspace';
 
 type Next = (err?: unknown) => void;
 
@@ -20,16 +22,22 @@ function send(res: ServerResponse, status: number, body: unknown, type = 'applic
   res.end(typeof body === 'string' ? body : JSON.stringify(body, null, 2) + '\n');
 }
 
-async function readBody(req: IncomingMessage): Promise<string> {
+async function readBytes(req: IncomingMessage, limit: number): Promise<Buffer> {
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const c of req) {
     size += (c as Buffer).length;
-    if (size > 5_000_000) throw new HttpError(413, 'body too large');
+    if (size > limit) throw new HttpError(413, 'body too large');
     chunks.push(c as Buffer);
   }
-  return Buffer.concat(chunks).toString('utf8');
+  return Buffer.concat(chunks);
 }
+
+async function readBody(req: IncomingMessage): Promise<string> {
+  return (await readBytes(req, 5_000_000)).toString('utf8');
+}
+
+const EXT_OF_MIME: Record<string, string> = Object.fromEntries(Object.entries(IMAGE_MIME).filter(([e]) => e !== '.jpeg').map(([e, t]) => [t, e]));
 
 function json<T>(raw: string): T {
   try {
@@ -148,9 +156,35 @@ export function createApi(ws: Workspace) {
           const file = ws.pick(q.get('file'));
           const a = analyze(ws.read(file), fontMeasure);
           const fmt = q.get('format') ?? 'svg';
-          if (fmt === 'svg') return send(res, 200, exportSvg(a.layout, q.get('bg') === 'none' ? null : '#ffffff'), 'image/svg+xml; charset=utf-8');
+          if (fmt === 'svg') {
+            const images = embedImages(path.dirname(ws.resolve(file).abs), imageSources(a.layout), ws.root);
+            return send(res, 200, exportSvg(a.layout, q.get('bg') === 'none' ? null : '#ffffff', (s) => images.get(s)), 'image/svg+xml; charset=utf-8');
+          }
           if (fmt === 'tikz') return send(res, 200, exportTikz(a.layout), 'text/x-tex; charset=utf-8');
           throw new HttpError(400, 'format must be svg or tikz');
+        }
+
+        // images: `src=` is relative to the .charpie file
+        case 'GET /api/asset': {
+          const src = q.get('src');
+          if (!src) throw new HttpError(400, 'src is required');
+          const { abs, type } = ws.asset(ws.pick(q.get('file')), src);
+          res.statusCode = 200;
+          res.setHeader('Content-Type', type);
+          res.setHeader('Cache-Control', 'no-cache');
+          fs.createReadStream(abs).pipe(res);
+          return;
+        }
+
+        case 'POST /api/asset': {
+          const file = ws.pick(q.get('file'));
+          const type = (req.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase();
+          const ext = EXT_OF_MIME[type];
+          if (!ext) throw new HttpError(415, `unsupported image type: ${type || '(none)'}（${Object.keys(EXT_OF_MIME).join(', ')}）`);
+          const data = await readBytes(req, 30_000_000);
+          if (!data.length) throw new HttpError(400, 'empty body');
+          const src = ws.saveAsset(file, data, ext, q.get('name') ?? undefined);
+          return send(res, 201, { ok: true, file, src });
         }
 
         case 'GET /api/selection':

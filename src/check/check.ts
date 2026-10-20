@@ -98,7 +98,7 @@ export function checkAll(doc: Doc, layout: Layout): Issue[] {
   const texErrors = (label: string | undefined) =>
     label?.includes('$') ? splitMath(label).flatMap((g) => (g.math && renderMath(g.s).error ? [`$${g.s}$: ${renderMath(g.s).error}`] : [])) : [];
   for (const n of nodes)
-    for (const [k, m] of texErrors(n.def.label).entries())
+    for (const [k, m] of texErrors(n.kind === 'image' ? '' : n.def.label).entries())
       issues.push({ id: `tex:${n.id}#${k}`, code: 'tex', severity: 'warning', message: `「${n.id}」の数式を組めません — ${m}`, nodes: [n.id], edges: [] });
   for (const e of layout.edges)
     for (const [k, m] of texErrors(e.def.label).entries())

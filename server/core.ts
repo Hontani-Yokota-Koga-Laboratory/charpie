@@ -83,7 +83,7 @@ export function summarize(src: string, a: Analysis) {
 export function measureNodes(a: Analysis, measure: Measure) {
   const r1 = (v: number) => Math.round(v * 10) / 10;
   return a.layout.nodes
-    .filter((l) => l.def.label)
+    .filter((l) => l.def.label && l.kind !== 'image')
     .map((l) => ({
       id: l.id,
       kind: l.kind,
@@ -128,8 +128,8 @@ export type Op =
   | { op: 'fix'; only?: string[] }
   | { op: 'setting'; key: string; value: number | null };
 
-const DEFAULT_SIZE: Record<ShapeKind, [number, number]> = { rect: [140, 60], round: [140, 60], ellipse: [120, 72], diamond: [140, 90], trap: [150, 64], para: [150, 60], hex: [150, 64], cross: [60, 60], plus: [60, 60], text: [120, 36] };
-const STEM: Record<ShapeKind, string> = { rect: 'box', round: 'box', ellipse: 'oval', diamond: 'cond', trap: 'trap', para: 'io', hex: 'hex', cross: 'cross', plus: 'plus', text: 'note' };
+const DEFAULT_SIZE: Record<ShapeKind, [number, number]> = { rect: [140, 60], round: [140, 60], ellipse: [120, 72], diamond: [140, 90], trap: [150, 64], para: [150, 60], hex: [150, 64], cross: [60, 60], plus: [60, 60], text: [120, 36], image: [160, 120] };
+const STEM: Record<ShapeKind, string> = { rect: 'box', round: 'box', ellipse: 'oval', diamond: 'cond', trap: 'trap', para: 'io', hex: 'hex', cross: 'cross', plus: 'plus', text: 'note', image: 'img' };
 
 function need(doc: Doc, id: string) {
   const n = doc.nodeMap.get(id);

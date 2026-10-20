@@ -1,11 +1,17 @@
 import { diagramBounds } from './components/Diagram';
 import type { Layout } from './layout';
 import { exportSvg } from './exportFormats';
+import { embeddedImages } from './images';
 
 export { exportSvg, exportTikz } from './exportFormats';
 
+/** SVG with the pictures of image shapes embedded, so the file stands alone. */
+export async function exportSvgStandalone(layout: Layout, bg: string | null = '#ffffff'): Promise<string> {
+  return exportSvg(layout, bg, await embeddedImages(layout));
+}
+
 export async function exportPng(layout: Layout, scale = 2, bg = '#ffffff'): Promise<Blob> {
-  const svg = exportSvg(layout, bg);
+  const svg = await exportSvgStandalone(layout, bg);
   const b = diagramBounds(layout);
   const w = Math.ceil((b.w + 48) * scale),
     h = Math.ceil((b.h + 48) * scale);

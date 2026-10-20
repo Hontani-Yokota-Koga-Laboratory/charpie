@@ -14,13 +14,16 @@ GET  /api/measure?file=NAME             per shape: font size, text block vs box 
                                         box that still holds the label as written (use it to tighten boxes)
 GET  /api/selection                     what the user has selected in the browser right now
                                         (unsaved: true = the browser holds edits not yet saved to disk)
-GET  /api/export?file=NAME&format=svg   or format=tikz
+GET  /api/export?file=NAME&format=svg   or format=tikz (svg embeds the pictures of image shapes)
+GET  /api/asset?file=NAME&src=PATH      a picture referenced by an image shape (src relative to the .charpie)
 \`file\` may be omitted: defaults to the file open in the browser (or the only file).
 
 ## Write
 PUT  /api/doc?file=NAME                 body = full .charpie text (creates the file if missing)
 POST /api/ops?file=NAME                 body = one op or a JSON array of ops (applied atomically)
      add "?strict=1" to reject the change (409) if it introduces new errors
+POST /api/asset?file=NAME&name=x.png   body = image bytes (Content-Type image/png|jpeg|gif|webp|svg+xml);
+                                        saved as assets/x-<hash>.png next to the .charpie → {"src":"assets/…"}
 POST /api/open    {"file":"NAME"}       show this file in the user's browser
 POST /api/select  {"nodes":["id"],"edges":["a->b#0"]}   highlight shapes for the user
 
@@ -57,7 +60,10 @@ After writing, check "errors" — fix overlaps/overflow with {"op":"fix"} or by 
   api -> (400, 120) "out"        # an end can be a point: (x, y), or +(dx, dy) relative to the other end
   (0, 50) -> api                 #   (relative = from the other end's port, else its centre)
   rect m "Step $\\theta_{k+1} = \\theta_k - \\eta\\nabla f$" ...   # $...$ = inline TeX (MathJax); write backslashes once; \\$ = a literal $
-  kinds: rect round ellipse diamond trap para hex cross plus text   (cross = ⊗, plus = ⊕; aliases otimes / oplus)
+  kinds: rect round ellipse diamond trap para hex cross plus text image   (cross = ⊗, plus = ⊕; aliases otimes / oplus)
+  image p "alt text" at (0, 0) size 160x120 src="assets/patch.png" fit=cover
+              # src = path relative to the .charpie file (or a URL); fit = contain (default) | cover | fill
+              # the label is alt text only (not drawn); no frame unless stroke= is given
   node attrs: fill stroke text lw dash(solid|dashed|dotted) font(auto|px) weight(bold|light)
               valign(top|middle|bottom) in(parent id) overlap=allow skew radius opacity
               dir(up|down|left|right: short side of a trap) pad(text padding, overrides set padding)

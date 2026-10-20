@@ -77,6 +77,19 @@ export async function svgToPng(svg: string, scale = 2): Promise<Buffer> {
     const body = svg.replace(/^<\?xml[^>]*>\s*/, '');
     await page.setContent(`<!doctype html><html><head><meta charset="utf-8"><style>${fontFaces()}\nhtml,body{margin:0;padding:0;background:transparent}svg{display:block}</style></head><body>${body}</body></html>`);
     await page.evaluate(() => document.fonts.ready);
+    // embedded pictures (image shapes) decode asynchronously
+    await page.evaluate(() =>
+      Promise.all(
+        [...document.querySelectorAll('image')].map(
+          (el) =>
+            new Promise((done) => {
+              const img = new Image();
+              img.onload = img.onerror = done;
+              img.src = el.getAttribute('href') ?? '';
+            }),
+        ),
+      ),
+    );
     return await page.screenshot({ clip: { x: 0, y: 0, width: w, height: h }, type: 'png', omitBackground: true });
   } finally {
     await browser.close();

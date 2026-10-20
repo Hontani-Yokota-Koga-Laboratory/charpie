@@ -221,6 +221,27 @@ describe('junction shapes', () => {
   });
 });
 
+describe('image shapes', () => {
+  const src = 'image p "a very long alt text that would never fit in a box this small" at (0, 0) size 40x30 src="assets/x.png" fit=cover\nimg q at (100, 0) size 40x30\n';
+  it('parses src / fit and the img alias', () => {
+    const d = parse(src);
+    expect(d.diagnostics).toEqual([]);
+    expect(d.nodes.map((n) => n.kind)).toEqual(['image', 'image']);
+    const l = computeLayout(d, approxMeasureFn);
+    expect(l.nodeMap.get('p')!.style).toMatchObject({ src: 'assets/x.png', fit: 'cover', stroke: 'none', fill: 'none' });
+    expect(l.nodeMap.get('q')!.style).toMatchObject({ src: undefined, fit: 'contain' });
+  });
+  it('treats the label as alt text: never a text overflow', () => {
+    const d = parse(src);
+    expect(checkLayout(d, computeLayout(d, approxMeasureFn))).toEqual([]);
+  });
+  it('round-trips through addNodes with a quoted src', () => {
+    const out = addNodes('', parse(''), [{ kind: 'image', id: 'img1', x: 0, y: 0, w: 160, h: 120, attrs: { src: 'assets/pasted-0123456789.png' } }]);
+    expect(out).toBe('image img1 at (0, 0) size 160x120 src="assets/pasted-0123456789.png"\n');
+    expect(parse(out).nodes[0].attrs.src).toBe('assets/pasted-0123456789.png');
+  });
+});
+
 describe('group titles', () => {
   const src = (h: string) => `round g "Title" at (0, 0) size 400x200 valign=top ${h}\nrect a "A" at (40, 120) size 60x40 in=g\nrect b "B" at (180, -120) size 40x40\nb -> a route=ortho\n`;
   it('flags an arrow crossing a group title and halign=left moves it aside', () => {

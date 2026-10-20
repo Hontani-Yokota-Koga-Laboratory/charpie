@@ -1,4 +1,4 @@
-export const SHAPE_KINDS = ['rect', 'round', 'ellipse', 'diamond', 'trap', 'para', 'hex', 'cross', 'plus', 'text'] as const;
+export const SHAPE_KINDS = ['rect', 'round', 'ellipse', 'diamond', 'trap', 'para', 'hex', 'cross', 'plus', 'text', 'image'] as const;
 export type ShapeKind = (typeof SHAPE_KINDS)[number];
 
 export const ARROW_OPS = ['->', '<-', '<->', '--'] as const;

@@ -33,10 +33,11 @@ import { IGNORE_NAME, ISSUE_LABEL } from '../check/check';
 import { ignoreIssue, unignoreIssue } from '../actions';
 import { autoFix } from '../check/resolve';
 import { canvasMeasure } from '../text/fit';
-import { download, exportPng, exportSvg, exportTikz, openFile, resetFileHandle, saveFile } from '../export';
+import { download, exportPng, exportSvgStandalone, exportTikz, openFile, resetFileHandle, saveFile } from '../export';
 import { createFile, flush, openFile as openRemoteFile, revert, save as saveRemote } from '../remote';
 import { Bot, Ellipsis, EyeOff, Layers, Radio, SlidersHorizontal } from 'lucide-react';
 import { useMobile } from '../useMobile';
+import { pickImages } from '../images';
 import { fitView } from './Canvas';
 import { ShapeIcon, SHAPE_NAMES } from './ui';
 import type { ShapeKind } from '../dsl/types';
@@ -390,18 +391,18 @@ export function TopBar({ onHelp }: { onHelp: () => void }) {
             <div className="menu-label">画像</div>
             <button
               className="menu-item"
-              onClick={() => {
+              onClick={async () => {
                 close();
-                download(`${base}.svg`, exportSvg(useStore.getState().layout), 'image/svg+xml');
+                download(`${base}.svg`, await exportSvgStandalone(useStore.getState().layout), 'image/svg+xml');
               }}
             >
               <Image size={15} /> SVG
             </button>
             <button
               className="menu-item"
-              onClick={() => {
+              onClick={async () => {
                 close();
-                download(`${base}-transparent.svg`, exportSvg(useStore.getState().layout, null), 'image/svg+xml');
+                download(`${base}-transparent.svg`, await exportSvgStandalone(useStore.getState().layout, null), 'image/svg+xml');
               }}
             >
               <Image size={15} /> SVG（背景なし）
@@ -483,6 +484,9 @@ export function Toolbar() {
           <ShapeIcon kind={x.t} />
         </button>
       ))}
+      <button className="tool-btn tip" data-tip={'画像を追加\n(Ctrl+V で貼り付け・ドロップでも可)'} onClick={() => pickImages()}>
+        <ShapeIcon kind="image" />
+      </button>
     </div>
   );
 }

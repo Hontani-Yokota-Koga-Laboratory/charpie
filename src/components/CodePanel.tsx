@@ -16,7 +16,7 @@ import type { Issue } from '../check/check';
 const External = Annotation.define<boolean>();
 
 // ───────────── language ─────────────
-const KINDS = new Set<string>([...SHAPE_KINDS, 'rectangle', 'box', 'rounded', 'circle', 'oval', 'trapezoid', 'parallelogram', 'hexagon', 'otimes', 'oplus', 'label']);
+const KINDS = new Set<string>([...SHAPE_KINDS, 'rectangle', 'box', 'rounded', 'circle', 'oval', 'trapezoid', 'parallelogram', 'hexagon', 'otimes', 'oplus', 'label', 'img', 'picture']);
 const KEYWORDS = new Set(['style', 'set', 'at', 'size']);
 
 interface LexState {
@@ -193,6 +193,7 @@ function complete(ctx: CompletionContext): CompletionResult | null {
       rotate: ['90', '-90', '180'],
       ignore: ['all', 'overlap', 'gap', 'text', 'contain', 'covered', 'through', 'label', 'loop'],
       font: ['auto', '12', '14', '16'],
+      fit: ['contain', 'cover', 'fill'],
       in: doc.nodes.map((n) => n.id),
     };
     const opts = vals[m[1]];

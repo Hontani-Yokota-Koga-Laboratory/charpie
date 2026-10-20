@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { analyze, applyOps, issuesOut, measureNodes, summarize } from './core';
 import { fontMeasure } from './measure';
 import { parse } from '../src/dsl/parse';
+import { exportSvg, exportTikz, imageSources } from '../src/exportFormats';
 
 const SRC = 'rect a "A" at (0, 0) size 120x60\nrect b "B" at (200, 0) size 120x60\n';
 
@@ -54,5 +55,22 @@ describe('api ops', () => {
     const w = fontMeasure('Hello', 500);
     expect(w).toBeGreaterThan(240);
     expect(w).toBeLessThan(300);
+  });
+});
+
+describe('image export', () => {
+  const src = 'image p at (0, 0) size 160x120 src="assets/x.png" fit=cover\nimage q at (200, 0) size 80x60 src="assets/missing.png"\n';
+  it('embeds resolved pictures and draws a placeholder for the rest', () => {
+    const a = analyze(src, fontMeasure);
+    expect(imageSources(a.layout)).toEqual(['assets/x.png', 'assets/missing.png']);
+    const svg = exportSvg(a.layout, '#ffffff', (s) => (s === 'assets/x.png' ? 'data:image/png;base64,AAAA' : undefined));
+    expect(svg).toContain('<image href="data:image/png;base64,AAAA" x="0" y="0" width="160" height="120" preserveAspectRatio="xMidYMid slice"');
+    expect(svg.match(/<image /g)!.length).toBe(1);
+    expect(svg).toContain('stroke-dasharray="4 3"');
+  });
+  it('uses includegraphics in TikZ', () => {
+    const tex = exportTikz(analyze(src, fontMeasure).layout);
+    expect(tex).toContain('\\includegraphics[width=120pt, height=90pt, keepaspectratio]{assets/x.png}');
+    expect(tex).toContain('graphicx');
   });
 });
