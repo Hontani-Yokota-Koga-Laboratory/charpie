@@ -40,6 +40,8 @@ import { useMobile } from '../useMobile';
 import { pickImages } from '../images';
 import { fitView } from './Canvas';
 import { ShapeIcon, SHAPE_NAMES } from './ui';
+import { FileGallery, useGallery } from './FileGallery';
+import { LayoutGrid } from 'lucide-react';
 import type { ShapeKind } from '../dsl/types';
 
 export function BrandMark() {
@@ -174,27 +176,25 @@ export function TopBar({ onHelp }: { onHelp: () => void }) {
       )}
 
       <div className="menu-wrap">
-        <button className="btn" onClick={() => setMenu(menu === 'file' ? null : 'file')}>
-          {workspace.on ? <span className="mono-name">{workspace.file ?? 'ファイル'}</span> : 'ファイル'} <ChevronDown size={13} />
-        </button>
+        {workspace.on ? (
+          <div className="file-split">
+            <button className="btn" title="ファイル一覧（Ctrl+P）" onClick={() => (close(), useGallery.getState().setOpen(true))}>
+              <LayoutGrid size={14} /> <span className="mono-name">{workspace.file ?? 'ファイル'}</span>
+            </button>
+            <button className="btn" title="その他" onClick={() => setMenu(menu === 'file' ? null : 'file')}>
+              <ChevronDown size={13} />
+            </button>
+          </div>
+        ) : (
+          <button className="btn" onClick={() => setMenu(menu === 'file' ? null : 'file')}>
+            ファイル <ChevronDown size={13} />
+          </button>
+        )}
         {menu === 'file' && workspace.on && (
           <div className="float menu" style={{ left: 0, right: 'auto', minWidth: 300 }}>
             <div className="menu-label" title={workspace.root}>
               {workspace.root.split('/').slice(-2).join('/')}
             </div>
-            {workspace.files.map((f) => (
-              <button
-                key={f}
-                className={'menu-item' + (f === workspace.file ? ' current' : '')}
-                onClick={() => {
-                  close();
-                  if (f !== workspace.file) openRemoteFile(f);
-                }}
-              >
-                <FileCode size={15} /> <span className="mono-name">{f}</span>
-              </button>
-            ))}
-            <div className="menu-sep" />
             <button
               className="menu-item"
               onClick={async () => {
@@ -423,6 +423,7 @@ export function TopBar({ onHelp }: { onHelp: () => void }) {
           </div>
         )}
       </div>
+      <FileGallery />
     </header>
   );
 }
@@ -738,7 +739,7 @@ api -> cache route=curve bend=40 dash=dashed`}</pre>
             <tr><td>ダブルクリック</td><td>文字を編集（空白部分なら図形を追加）</td></tr>
             <tr><td>ホバー時の ● をドラッグ</td><td>矢印を引く（何もない所で離すと図形ごと追加）</td></tr>
             <tr><td>Shift / Alt (ドラッグ中)</td><td>軸固定・比率固定 / スナップ無効・中心から拡縮</td></tr>
-            <tr><td>Space+ドラッグ, ホイール</td><td>パン（Ctrl+ホイールでズーム）</td></tr>
+            <tr><td>ホイール / Space+ドラッグ</td><td>ズーム / パン（Shift+ホイールで横、トラックパッドの 2 本指はパン）</td></tr>
             <tr><td>Ctrl C / V / D</td><td>コピー（テキストとして）/ 貼り付け / 複製</td></tr>
             <tr><td>矢印キー</td><td>1px 移動（Shift で 10px）</td></tr>
             <tr><td>Ctrl S / O</td><td>保存 / 開く</td></tr>

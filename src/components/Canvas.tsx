@@ -136,7 +136,9 @@ export function Canvas() {
       e.preventDefault();
       const s = useStore.getState();
       const v = s.view;
-      if (e.ctrlKey || e.metaKey) {
+      // mouse wheel / pinch (ctrlKey) zoom; trackpad two-finger scroll (sideways component) and Shift pan
+      const pan = !(e.ctrlKey || e.metaKey) && (e.shiftKey || e.deltaX !== 0);
+      if (!pan) {
         const r = el.getBoundingClientRect();
         const px = e.clientX - r.left,
           py = e.clientY - r.top;

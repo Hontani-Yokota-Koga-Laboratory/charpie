@@ -268,6 +268,7 @@ function connectEvents() {
     const s = useStore.getState();
     switch (ev.type) {
       case 'change': {
+        window.dispatchEvent(new CustomEvent('charpie:file-change', { detail: { file: ev.file } }));
         if (ev.file !== s.workspace.file) return;
         if (ev.src === s.src) {
           synced = ev.hash;
