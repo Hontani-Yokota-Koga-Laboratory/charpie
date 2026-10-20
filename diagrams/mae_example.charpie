@@ -1,0 +1,61 @@
+# MAE（Masked Autoencoders Are Scalable Vision Learners, He et al. 2022）の概要図。charpie の見本
+# 上段 = 事前学習（75% を隠して画素を復元）/ 下段 = 下流タスク（Decoder は捨て、Encoder だけを使う）
+# 実体（データ・モデル）= 色付き実線 / 計算（実体のない処理）= 白地の点線・小さめ / 学習する部品 = オレンジ
+set gap=12 grid=10 padding=4 fontmin=9 fontmax=30
+
+style group { fill: #f8fafc; stroke: #94a3b8; text: #1e293b; valign: top; halign: left; weight: bold; font: 34; lw: 2; pad: 18; }
+style img   { fill: #fdf2f8; stroke: #db2777; text: #831843; weight: bold; font: 24; lw: 2; }
+style learn { fill: #fff7ed; stroke: #ea580c; text: #7c2d12; weight: bold; font: 24; lw: 3; }
+style feat  { fill: #ffffff; stroke: #64748b; text: #1e293b; weight: bold; font: 22; lw: 2; }
+style out   { fill: #ecfdf5; stroke: #059669; text: #064e3b; weight: bold; font: 24; lw: 2; }
+style op    { fill: #ffffff; stroke: #64748b; text: #475569; font: 22; lw: 0.75; dash: dotted; }
+style keyop { fill: #fef2f2; stroke: #dc2626; text: #7f1d1d; font: 22; lw: 2; dash: dotted; }
+
+# ---------------- 入力（上下で共有） ----------------
+rect    x       "Input\nImage\n224×224"   at (0, 100) size 150x500 .img
+
+# ---------------- 上段：事前学習 ----------------
+round   pre     "Pre-training (self-supervised)"  at (190, 0) size 1660x340 .group stroke=#ea580c lw=3
+
+round   pat     "Patchify\n16×16"         at (220, 157) size 130x86 .op in=pre
+round   msk     "Random\nMask 75%"        at (390, 157) size 140x86 .keyop in=pre
+rect    vis     "Visible\n$49 \times D$"  at (570, 150) size 130x100 .feat in=pre
+trap    enc     "ViT\nEncoder"            at (740, 140) size 160x120 .learn dir=right skew=0.15 in=pre
+rect    lat     "Latent\n$49 \times D$"   at (940, 150) size 130x100 .feat in=pre
+round   ins     "Unshuffle\n+ [MASK]"     at (1110, 157) size 150x86 .op in=pre
+rect    mtok    "[MASK]\n(learned)"       at (1120, 40) size 130x64 .learn font=20 lw=2 in=pre
+trap    dec     "Light\nDecoder"          at (1300, 140) size 160x120 .learn dir=left skew=0.15 in=pre
+rect    pix     "Pixels\n$196 \times 768$"  at (1500, 150) size 130x100 .feat in=pre
+round   loss    "MSE\n(masked\npatches)"  at (1670, 150) size 150x100 .op in=pre
+
+# ---------------- 下段：下流タスク ----------------
+round   ft      "Fine-tuning"             at (190, 410) size 1660x230 .group stroke=#059669
+
+round   pat2    "Patchify\n16×16"         at (220, 507) size 130x86 .op in=ft
+trap    enc2    "ViT\nEncoder"            at (740, 490) size 160x120 .learn dir=right skew=0.15 in=ft
+round   pool    "Average\nPool"           at (940, 507) size 130x86 .op in=ft
+hex     head    "Linear\nHead"            at (1110, 495) size 150x110 .learn skew=0.1 in=ft
+rect    cls     "Class"                   at (1300, 515) size 130x70 .out in=ft
+
+# 上段の流れ
+x.e -> pat.w fromat=0.2 route=ortho lw=2
+pat -> msk lw=2
+msk -> vis lw=2
+vis -> enc lw=2
+enc -> lat lw=2
+lat -> ins lw=2
+mtok.s -> ins.n lw=2
+ins -> dec lw=2
+dec -> pix lw=2
+pix -> loss lw=2
+pat.s -> loss.s "target" route=ortho lw=2 font=20
+
+# 下段の流れ
+x.e -> pat2.w fromat=0.9 route=ortho lw=2
+pat2 -> enc2 "all 196 tokens" lw=2 font=20
+enc2 -> pool lw=2
+pool -> head lw=2
+head -> cls lw=2
+
+# 事前学習の重みで初期化（Decoder は捨てる）
+enc.s -> enc2.n "init" dash=dashed stroke=#ea580c lw=2 font=20

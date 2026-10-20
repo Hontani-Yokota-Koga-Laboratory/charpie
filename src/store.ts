@@ -1,0 +1,321 @@
+import { create } from 'zustand';
+import { parse } from './dsl/parse';
+import type { Doc, ShapeKind } from './dsl/types';
+import { computeLayout, type Layout } from './layout';
+import { checkAll, type Issue } from './check/check';
+import { canvasMeasure } from './text/fit';
+import { SAMPLE } from './sample';
+
+export type Tool = 'select' | 'edge' | 'pan' | ShapeKind;
+export type ViewMode = 'split' | 'canvas' | 'code';
+
+export interface Selection {
+  nodes: string[];
+  edges: string[];
+}
+
+export interface Derived {
+  doc: Doc;
+  layout: Layout;
+  issues: Issue[];
+  /** issues silenced with `ignore=` */
+  ignored: Issue[];
+}
+
+function derive(src: string): Derived {
+  const doc = parse(src);
+  const layout = computeLayout(doc, canvasMeasure);
+  const all = checkAll(doc, layout);
+  return { doc, layout, issues: all.filter((i) => !i.ignored), ignored: all.filter((i) => i.ignored) };
+}
+
+const LS_SRC = 'charpie:src';
+const LS_UI = 'charpie:ui';
+
+function load<T>(key: string, fallback: T): T {
+  try {
+    const v = localStorage.getItem(key);
+    return v === null ? fallback : (JSON.parse(v) as T);
+  } catch {
+    return fallback;
+  }
+}
+
+interface UiPrefs {
+  theme: 'light' | 'dark';
+  viewMode: ViewMode;
+  codeWidth: number;
+  fileName: string;
+  geomAnchor: GeomAnchor;
+  autoSave: boolean;
+}
+
+/** What the inspector's X/Y mean, and what stays fixed when W/H change. */
+export type GeomAnchor = 'corner' | 'center';
+
+const prefs = load<Partial<UiPrefs>>(LS_UI, {});
+const initialSrc = load<string>(LS_SRC, SAMPLE);
+const systemDark = typeof matchMedia !== 'undefined' && matchMedia('(prefers-color-scheme: dark)').matches;
+
+export interface Workspace {
+  on: boolean;
+  root: string;
+  file: string | null;
+  files: string[];
+  status: 'live' | 'offline' | 'saving';
+  /** the text differs from what is on disk (manual-save mode) */
+  dirty: boolean;
+  /** the file changed on disk while there were unsaved edits */
+  conflict: boolean;
+}
+
+export interface State extends Derived {
+  src: string;
+  /** who produced the latest change (editor changes must not be echoed back) */
+  origin: 'editor' | 'ui' | 'init' | 'remote';
+  /** bumped when the text is replaced from outside, so in-flight canvas gestures abort */
+  epoch: number;
+  workspace: Workspace;
+  past: string[];
+  future: string[];
+  lastPush: number;
+  gestureBase: string | null;
+
+  selection: Selection;
+  tool: Tool;
+  view: { x: number; y: number; zoom: number };
+  theme: 'light' | 'dark';
+  viewMode: ViewMode;
+  codeWidth: number;
+  fileName: string;
+  geomAnchor: GeomAnchor;
+  /** workspace: write every change to disk, or only on save */
+  autoSave: boolean;
+  editing: { type: 'node' | 'edge'; id: string } | null;
+  hoverIssue: string | null;
+  focusIssue: string | null;
+  /** touch: taps add to / toggle the selection */
+  multiSelect: boolean;
+  /** mobile: inspector sheet shown without a selection (document settings) */
+  docSheet: boolean;
+  toast: { id: number; text: string; tone?: 'ok' | 'warn' } | null;
+
+  setSource(src: string, opts?: { origin?: State['origin']; history?: 'push' | 'coalesce' | 'none' }): void;
+  /** Apply a source transform as one undoable step. */
+  apply(fn: (src: string, doc: Doc) => string, origin?: State['origin']): void;
+  beginGesture(): void;
+  endGesture(): void;
+  undo(): void;
+  redo(): void;
+  remeasure(): void;
+
+  select(sel: Partial<Selection>, mode?: 'replace' | 'toggle' | 'add'): void;
+  clearSelection(): void;
+  setTool(t: Tool): void;
+  setView(v: Partial<State['view']>): void;
+  setTheme(t: State['theme']): void;
+  setViewMode(m: ViewMode): void;
+  setCodeWidth(w: number): void;
+  setFileName(n: string): void;
+  setGeomAnchor(a: GeomAnchor): void;
+  setAutoSave(v: boolean): void;
+  setEditing(e: State['editing']): void;
+  setHoverIssue(id: string | null): void;
+  setFocusIssue(id: string | null): void;
+  notify(text: string, tone?: 'ok' | 'warn'): void;
+  setWorkspace(w: Partial<Workspace>): void;
+  setMultiSelect(v: boolean): void;
+  setDocSheet(v: boolean): void;
+  /** Replace the text from outside (server / Claude Code). */
+  loadExternal(src: string, opts?: { resetHistory?: boolean }): void;
+}
+
+const HISTORY_LIMIT = 300;
+
+export const useStore = create<State>((set, get) => ({
+  src: initialSrc,
+  ...derive(initialSrc),
+  origin: 'init',
+  epoch: 0,
+  workspace: { on: false, root: '', file: null, files: [], status: 'offline', dirty: false, conflict: false },
+  past: [],
+  future: [],
+  lastPush: 0,
+  gestureBase: null,
+
+  selection: { nodes: [], edges: [] },
+  tool: 'select',
+  view: { x: 0, y: 0, zoom: 1 },
+  theme: prefs.theme ?? (systemDark ? 'dark' : 'light'),
+  viewMode: prefs.viewMode ?? 'split',
+  codeWidth: prefs.codeWidth ?? 440,
+  fileName: prefs.fileName ?? 'diagram.charpie',
+  geomAnchor: prefs.geomAnchor ?? 'corner',
+  autoSave: prefs.autoSave ?? false,
+  editing: null,
+  hoverIssue: null,
+  focusIssue: null,
+  multiSelect: false,
+  docSheet: false,
+  toast: null,
+
+  setSource(src, opts = {}) {
+    const s = get();
+    if (src === s.src) return;
+    const history = opts.history ?? 'push';
+    let past = s.past;
+    let lastPush = s.lastPush;
+    if (s.gestureBase === null && history !== 'none') {
+      const now = Date.now();
+      if (history === 'push' || now - s.lastPush > 800) {
+        past = [...past, s.src].slice(-HISTORY_LIMIT);
+      }
+      lastPush = now;
+    }
+    const d = derive(src);
+    // prune selection of removed items
+    const sel = s.selection;
+    const nodes = sel.nodes.filter((id) => d.doc.nodeMap.has(id));
+    const edges = sel.edges.filter((k) => d.layout.edgeMap.has(k));
+    set({
+      src,
+      ...d,
+      origin: opts.origin ?? 'ui',
+      past,
+      future: history === 'none' ? s.future : [],
+      lastPush,
+      selection: nodes.length !== sel.nodes.length || edges.length !== sel.edges.length ? { nodes, edges } : sel,
+    });
+  },
+
+  apply(fn, origin = 'ui') {
+    const s = get();
+    const next = fn(s.src, s.doc);
+    if (next !== s.src) s.setSource(next, { origin, history: 'push' });
+  },
+
+  beginGesture() {
+    set({ gestureBase: get().src });
+  },
+  endGesture() {
+    const s = get();
+    if (s.gestureBase !== null && s.gestureBase !== s.src) {
+      set({ past: [...s.past, s.gestureBase].slice(-HISTORY_LIMIT), future: [], gestureBase: null });
+    } else set({ gestureBase: null });
+  },
+
+  undo() {
+    const s = get();
+    const prev = s.past[s.past.length - 1];
+    if (prev === undefined) return;
+    set({ past: s.past.slice(0, -1), future: [s.src, ...s.future] });
+    get().setSource(prev, { history: 'none' });
+    set({ future: [s.src, ...s.future] });
+  },
+  redo() {
+    const s = get();
+    const next = s.future[0];
+    if (next === undefined) return;
+    set({ past: [...s.past, s.src], future: s.future.slice(1) });
+    get().setSource(next, { history: 'none' });
+    set({ future: s.future.slice(1) });
+  },
+
+  remeasure() {
+    set(derive(get().src));
+  },
+
+  select(sel, mode = 'replace') {
+    const cur = get().selection;
+    if (mode === 'replace') {
+      set({ selection: { nodes: sel.nodes ?? [], edges: sel.edges ?? [] } });
+      return;
+    }
+    const merge = (a: string[], b: string[] = []) => {
+      const out = new Set(a);
+      for (const x of b) {
+        if (mode === 'toggle' && out.has(x)) out.delete(x);
+        else out.add(x);
+      }
+      return [...out];
+    };
+    set({ selection: { nodes: merge(cur.nodes, sel.nodes), edges: merge(cur.edges, sel.edges) } });
+  },
+  clearSelection() {
+    if (get().selection.nodes.length || get().selection.edges.length) set({ selection: { nodes: [], edges: [] } });
+  },
+  setTool(tool) {
+    set({ tool });
+  },
+  setView(v) {
+    set({ view: { ...get().view, ...v } });
+  },
+  setTheme(theme) {
+    set({ theme });
+  },
+  setViewMode(viewMode) {
+    set({ viewMode });
+  },
+  setCodeWidth(codeWidth) {
+    set({ codeWidth: Math.max(280, Math.min(900, codeWidth)) });
+  },
+  setFileName(fileName) {
+    set({ fileName });
+  },
+  setGeomAnchor(geomAnchor) {
+    set({ geomAnchor });
+  },
+  setAutoSave(autoSave) {
+    set({ autoSave });
+  },
+  setEditing(editing) {
+    set({ editing });
+  },
+  setHoverIssue(hoverIssue) {
+    set({ hoverIssue });
+  },
+  setFocusIssue(focusIssue) {
+    set({ focusIssue });
+  },
+  notify(text, tone) {
+    set({ toast: { id: Date.now(), text, tone } });
+  },
+  setMultiSelect(multiSelect) {
+    set({ multiSelect });
+  },
+  setDocSheet(docSheet) {
+    set({ docSheet });
+  },
+  setWorkspace(w) {
+    set({ workspace: { ...get().workspace, ...w } });
+  },
+  loadExternal(src, opts = {}) {
+    const s = get();
+    if (src === s.src) return;
+    set({ gestureBase: null, epoch: s.epoch + 1, editing: null });
+    get().setSource(src, { origin: 'remote', history: opts.resetHistory ? 'none' : 'push' });
+    if (opts.resetHistory) set({ past: [], future: [] });
+  },
+}));
+
+// persistence (debounced)
+let saveTimer: ReturnType<typeof setTimeout> | undefined;
+useStore.subscribe((s, prev) => {
+  if (s.src === prev.src && s.theme === prev.theme && s.viewMode === prev.viewMode && s.codeWidth === prev.codeWidth && s.fileName === prev.fileName && s.geomAnchor === prev.geomAnchor && s.autoSave === prev.autoSave) return;
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    try {
+      localStorage.setItem(LS_SRC, JSON.stringify(s.src));
+      localStorage.setItem(LS_UI, JSON.stringify({ theme: s.theme, viewMode: s.viewMode, codeWidth: s.codeWidth, fileName: s.fileName, geomAnchor: s.geomAnchor, autoSave: s.autoSave }));
+    } catch {
+      /* storage unavailable */
+    }
+  }, 250);
+});
+
+/** Convenience: the full set of issue ids touching a node / edge. */
+export function issuesFor(issues: Issue[], kind: 'node' | 'edge', id: string): Issue[] {
+  return issues.filter((i) => (kind === 'node' ? i.nodes.includes(id) : i.edges.includes(id)));
+}
+
+if (import.meta.env.DEV) (window as unknown as { __charpie: typeof useStore }).__charpie = useStore;
