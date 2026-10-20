@@ -20,8 +20,19 @@ npm test
     - 主にスライドに載せる用途で使えます。
     - 論文に載せるなどの用途は一応非推奨です。
 - How to use
-    - clone して、sample
+    - clone して、`xx/のディレクトリのモデルを、 sample図を参考に概念図におこして` だけで図ができます。
+    - 検証環境は Claude Code, Opus 5.5, effort max です。
+- このアプリを使うメリットは？
+    - 特にありません。最近は、draw.io なんかも MCP サーバーで AI 連携ができるそうです。
+    - この生成 AI 時代、同じようなツールを作っている人なんていくらでもいると思います。
+    - このアプリの共有はあくまで、「こういうの便利だったよ！」の共有に過ぎません。
+    - （強いて言えば、すでにサンプルが作られている分、AIへの指示が少し楽かもしれません）
 
+## デモ
+
+見本の [diagrams/mae_example.charpie](diagrams/mae_example.charpie)（MAE の概要図）。`npm run serve` で開くとこの図が出ます。
+
+![MAE の概要図](docs/mae_example.png)
 
 ## Claude Code 連携
 
