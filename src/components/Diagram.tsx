@@ -89,7 +89,7 @@ const DASH = { solid: undefined, dashed: (lw: number) => `${lw * 4} ${lw * 3}`, 
 const dashArray = (d: 'solid' | 'dashed' | 'dotted', lw: number) => (d === 'solid' ? undefined : DASH[d](lw));
 
 export function NodeText({ n, hidden }: { n: NodeLayout; hidden?: boolean }) {
-  if (!n.def.label || hidden || n.kind === 'image') return null;
+  if (!n.def.label || hidden || n.kind === 'image' || n.blocks) return null;
   const { size, lines } = n.text;
   const lh = size * LINE_HEIGHT;
   const rot = n.style.rotate;
@@ -142,16 +142,45 @@ export const NodeShape = memo(function NodeShape({ n, hideText, interactive }: {
       <path
         d={n.path}
         fill={s.fill === 'none' ? (interactive ? 'transparent' : 'none') : s.fill}
-        stroke={s.stroke === 'none' ? 'none' : s.stroke}
+        stroke={s.stroke === 'none' || n.kind === 'table' ? 'none' : s.stroke}
         strokeWidth={s.lw}
         strokeDasharray={dashArray(s.dash, s.lw)}
         strokeLinecap="round"
         strokeLinejoin="round"
       />
       <NodeText n={n} hidden={hideText} />
+      {n.blocks && <BlockContent n={n} hidden={hideText} />}
     </g>
   );
 });
+
+/** table / list content: positioned text pieces and (table) rules. */
+function BlockContent({ n, hidden }: { n: NodeLayout; hidden?: boolean }) {
+  const b = n.blocks!;
+  if (hidden) return null;
+  const color = n.style.text;
+  return (
+    <g style={{ pointerEvents: 'none' }}>
+      {b.rules.map((r, i) => (
+        <line key={'r' + i} x1={r.x1} y1={r.y1} x2={r.x2} y2={r.y2} stroke={n.style.stroke === 'none' ? color : n.style.stroke} strokeWidth={r.lw} />
+      ))}
+      {b.pieces.map((p, i) => {
+        const lh = p.size * LINE_HEIGHT;
+        const baseline = (k: number, t: string) => p.y + lh * (k + 0.5) + inkCenter(t, p.weight) * p.size;
+        if (p.rich) return <RichText key={i} lines={p.lines} rich={p.rich} ax={p.x} anchor={p.anchor} size={p.size} weight={p.weight} fill={color} baseline={baseline} />;
+        return (
+          <text key={i} fontSize={p.size} fontWeight={p.weight} fill={color} textAnchor={p.anchor === 'left' ? 'start' : p.anchor === 'right' ? 'end' : 'middle'} fontFamily={FONT_FAMILY}>
+            {p.lines.map((l, k) => (
+              <tspan key={k} x={p.x} y={baseline(k, l)}>
+                {unescapeDollar(l) || ' '}
+              </tspan>
+            ))}
+          </text>
+        );
+      })}
+    </g>
+  );
+}
 
 export const EdgeShape = memo(function EdgeShape({ e, interactive }: { e: EdgeLayout; interactive?: boolean }) {
   const s = e.style;

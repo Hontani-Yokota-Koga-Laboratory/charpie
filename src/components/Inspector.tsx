@@ -27,7 +27,7 @@ import {
   FoldVertical,
 } from 'lucide-react';
 import { reparse, useStore, type State } from '../store';
-import { isValidId, pointText, renameNode, setEdgeEnds, setPageHeader, setSetting, setEdgeLabel, setEdgesAttr, setEdgesOp, setNodeLabel, setNodesAttr, setNodesGeom, setNodesKind, type Geom } from '../dsl/patch';
+import { isValidId, pointText, renameNode, setEdgeEnds, setNodeBody, setPageHeader, setSetting, setEdgeLabel, setEdgesAttr, setEdgesOp, setNodeLabel, setNodesAttr, setNodesGeom, setNodesKind, type Geom } from '../dsl/patch';
 import { assetHref } from '../images';
 import { SHAPE_KINDS, type ArrowOp, type Doc, type ShapeKind } from '../dsl/types';
 import { align, distribute, matchSize, stack, type AlignMode } from '../ops/arrange';
@@ -196,7 +196,15 @@ function NodeInspector({ nodes, doc }: { nodes: State['layout']['nodes']; doc: D
         </div>
       </div>
 
-      {single && (
+      {single?.def.body && (single.kind === 'table' || single.kind === 'list') && (
+        <div className="section">
+          <div className="section-label">{single.kind === 'table' ? '表の中身（| a | b | の行、|---| で見出しの区切り）' : '項目（- / 1. で始める、2 文字下げで入れ子）'}</div>
+          <LiveText multiline mono rows={6} key={single.id + ':body'} value={single.def.body.text} onChange={(v) => edit((src, d) => setNodeBody(src, d, single.id, v))} />
+          {single.kind === 'table' && <div className="hint-text">属性: align=l,c,r（列ごとの寄せ）· cols=2,1,1（列幅の比）· header=N · rules=booktabs|grid|none</div>}
+        </div>
+      )}
+
+      {single && single.kind !== 'table' && single.kind !== 'list' && (
         <div className="section">
           <div className="section-label">{single.kind === 'image' ? '説明（代替テキスト・図には描かれません）' : 'ラベル'}</div>
           <LiveText multiline rows={2} key={single.id} value={single.def.labelSource ?? single.def.label} onChange={(v) => edit((src, d) => setNodeLabel(src, d, single.id, v))} />

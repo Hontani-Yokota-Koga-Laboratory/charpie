@@ -14,6 +14,7 @@ import {
   type TrapDir,
 } from './geom/geom';
 import { fitText, richLines, wrap, LINE_HEIGHT, type FitResult, type Measure, type RichLine } from './text/fit';
+import { layoutList, layoutTable, parseList, parseTable, type BlockLayout } from './text/blocks';
 
 export interface NodeStyle {
   fill: string;
@@ -73,6 +74,8 @@ export interface NodeLayout {
   text: FitResult;
   /** per-line runs when the label has `$...$` formulas */
   rich?: (RichLine | null)[];
+  /** table / list: the content laid out (the label is not drawn) */
+  blocks?: BlockLayout;
   depth: number;
   parents: string[];
 }
@@ -152,11 +155,11 @@ function mergedProps(doc: Doc, classes: string[], attrs: Record<string, string>)
 
 export function nodeStyle(doc: Doc, n: NodeDef): NodeStyle {
   const p = mergedProps(doc, n.classes, n.attrs);
-  // text and image shapes have no frame unless one is asked for
-  const isText = n.kind === 'text' || n.kind === 'image';
+  // text, image and list shapes have no frame unless one is asked for (a table's stroke colours its rules)
+  const isText = n.kind === 'text' || n.kind === 'image' || n.kind === 'list';
   const font = p.font === undefined || p.font === 'auto' ? undefined : num(p.font, NaN);
   return {
-    fill: p.fill ?? (isText ? 'none' : NODE_DEFAULTS.fill),
+    fill: p.fill ?? (isText || n.kind === 'table' ? 'none' : NODE_DEFAULTS.fill),
     stroke: p.stroke ?? (isText ? 'none' : NODE_DEFAULTS.stroke),
     text: p.text ?? NODE_DEFAULTS.text,
     lw: num(p.lw, NODE_DEFAULTS.lw),
@@ -226,6 +229,7 @@ export function layoutNode(doc: Doc, n: NodeDef, measure: Measure, geomOverride?
   const box = geomOverride ?? { x: n.x, y: n.y, w: n.w, h: n.h };
   const o: ShapeOpts = { skew: style.skew, radius: style.radius, dir: style.dir };
   const tb = textBox(n.kind, box, o, style.pad ?? doc.settings.padding);
+  if (n.kind === 'table' || n.kind === 'list') return layoutBlockNode(doc, n, measure, box, tb, style, o);
   const sideways = style.rotate === 90 || style.rotate === 270;
   // an image's label is only its alt text: it is not drawn, so it never has to fit
   const text = fitText(n.kind === 'image' ? '' : n.label, sideways ? { w: tb.h, h: tb.w } : tb, {
@@ -259,12 +263,51 @@ export function layoutNode(doc: Doc, n: NodeDef, measure: Measure, geomOverride?
   };
 }
 
+/** table / list: the body fitted into the text area at one font size. */
+function layoutBlockNode(doc: Doc, n: NodeDef, measure: Measure, box: Box, tb: Box, style: NodeStyle, o: ShapeOpts): NodeLayout {
+  const body = n.body?.text ?? '';
+  const opts = { fixed: style.font, min: doc.settings.fontmin, max: doc.settings.fontmax, weight: style.weight, measure };
+  const p = mergedProps(doc, n.classes, n.attrs);
+  const blocks =
+    n.kind === 'table'
+      ? layoutTable(parseTable(body, p), tb, {
+          ...opts,
+          cols: p.cols
+            ?.split(',')
+            .map(Number)
+            .filter((x) => x > 0),
+          rules: p.rules === 'grid' || p.rules === 'none' ? p.rules : 'booktabs',
+        })
+      : layoutList(parseList(body), tb, opts);
+  const parents = ancestors(doc, n.id);
+  return {
+    id: n.id,
+    def: n,
+    kind: n.kind,
+    box,
+    poly: outline(n.kind, box, o),
+    path: shapePath(n.kind, box, o),
+    textBox: tb,
+    textRect: { x: tb.x, y: tb.y, w: blocks.width, h: blocks.height },
+    style,
+    text: { size: blocks.size, lines: [], width: blocks.width, height: blocks.height, overflow: blocks.overflow, auto: style.font === undefined },
+    blocks,
+    depth: parents.length,
+    parents,
+  };
+}
+
 /**
  * Smallest box (whole px) that still holds the label as written — explicit line breaks only — at the
  * node's current font size. Uses the same tolerances as fitText, so one pixel less no longer fits.
  */
 export function fitSize(doc: Doc, l: NodeLayout, measure: Measure): { w: number; h: number } {
   const { style, kind } = l;
+  if (l.blocks) {
+    // table / list: the content's extent at the current size (lists reflow, so this is a lower bound)
+    const pad = style.pad ?? doc.settings.padding;
+    return { w: Math.ceil(l.blocks.width + pad * 2), h: Math.ceil(l.blocks.height + pad * 2 + 0.5) };
+  }
   const size = l.text.size;
   const r = wrap(l.def.label, size, Infinity, style.weight, measure);
   const lineW = r.width,

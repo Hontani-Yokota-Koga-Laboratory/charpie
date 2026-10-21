@@ -1,4 +1,4 @@
-export const SHAPE_KINDS = ['rect', 'round', 'ellipse', 'diamond', 'trap', 'para', 'hex', 'cross', 'plus', 'text', 'image'] as const;
+export const SHAPE_KINDS = ['rect', 'round', 'ellipse', 'diamond', 'trap', 'para', 'hex', 'cross', 'plus', 'text', 'image', 'table', 'list'] as const;
 export type ShapeKind = (typeof SHAPE_KINDS)[number];
 
 export const ARROW_OPS = ['->', '<-', '<->', '--'] as const;
@@ -55,8 +55,8 @@ export interface NodeDef {
   labelSource?: string;
   /** slot name: a layout's `slot` (layout view) or the page content filling it (page view) */
   slot?: string;
-  /** `table` / `list`: the raw lines between `{` and `}` */
-  body?: { text: string; span: Span };
+  /** `table` / `list`: the raw lines between `{` and `}` (`braces` false: none written yet, span is where they go) */
+  body?: { text: string; span: Span; braces: boolean };
 }
 
 /** A free arrow end: absolute `(x, y)` or `+(dx, dy)` relative to the other end. */

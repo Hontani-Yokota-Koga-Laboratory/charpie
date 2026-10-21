@@ -1,10 +1,97 @@
 import { useEffect, useLayoutEffect, useRef } from 'react';
-import { removeItems, setEdgeLabel, setNodeLabel } from '../dsl/patch';
+import { removeItems, setEdgeLabel, setNodeBody, setNodeLabel } from '../dsl/patch';
 import { useStore } from '../store';
 import { FONT_FAMILY, LINE_HEIGHT } from '../text/fit';
 
-/** contentEditable overlay used to edit node / edge labels in place. */
+/** In-place editing: a label, or the `{ ... }` lines of a table / list. */
 export function InlineEditor() {
+  const editing = useStore((s) => s.editing)!;
+  const isBlock = useStore((s) => editing.type === 'node' && !!s.layout.nodeMap.get(editing.id)?.blocks);
+  return isBlock ? <BlockEditor key={editing.id} id={editing.id} /> : <LabelEditor />;
+}
+
+/** The body of a table / list as plain lines over the shape; typing updates the canvas live. */
+function BlockEditor({ id }: { id: string }) {
+  const view = useStore((s) => s.view);
+  const node = useStore((s) => s.layout.nodeMap.get(id));
+  const ref = useRef<HTMLTextAreaElement>(null);
+  const done = useRef(false);
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.value = useStore.getState().doc.nodeMap.get(id)?.body?.text ?? '';
+    el.focus();
+    done.current = false;
+    useStore.getState().beginGesture();
+  }, [id]);
+  useEffect(() => {
+    if (!node) useStore.getState().setEditing(null);
+  }, [node]);
+  if (!node) return null;
+
+  const live = () => {
+    const s = useStore.getState();
+    if (s.gestureBase === null) return;
+    s.setSource(setNodeBody(s.src, s.doc, id, ref.current?.value ?? ''), { history: 'none' });
+  };
+  const commit = (save: boolean) => {
+    if (done.current) return;
+    done.current = true;
+    const s = useStore.getState();
+    if (save) live();
+    else if (s.gestureBase !== null) s.setSource(s.gestureBase, { history: 'none' });
+    s.endGesture();
+    s.setEditing(null);
+  };
+  const z = view.zoom;
+  const b = node.box;
+  const fontSize = Math.max(12, Math.min(16, node.text.size * z * 0.8));
+  return (
+    <div className="inline-editor block-editor" style={{ left: view.x + b.x * z, top: view.y + b.y * z, width: Math.max(320, b.w * z), height: Math.max(160, b.h * z) }}>
+      <textarea
+        ref={ref}
+        spellCheck={false}
+        style={{ fontSize }}
+        placeholder={node.kind === 'table' ? '| 見出し | 見出し |\n|---|---|\n| a | b |' : '- 項目\n  - 入れ子'}
+        onKeyDown={(e) => {
+          e.stopPropagation();
+          if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+            e.preventDefault();
+            commit(true);
+          } else if (e.key === 'Escape') {
+            e.preventDefault();
+            commit(false);
+          } else if (e.key === 'Tab') {
+            // indent / outdent the current line (lists nest by two spaces)
+            e.preventDefault();
+            const el = e.currentTarget;
+            const start = el.value.lastIndexOf('\n', el.selectionStart - 1) + 1;
+            if (e.shiftKey) {
+              const cut = /^ {1,2}/.exec(el.value.slice(start))?.[0].length ?? 0;
+              if (!cut) return;
+              const pos = el.selectionStart;
+              el.setRangeText('', start, start + cut, 'preserve');
+              el.selectionStart = el.selectionEnd = Math.max(start, pos - cut);
+            } else {
+              const pos = el.selectionStart;
+              el.setRangeText('  ', start, start, 'preserve');
+              el.selectionStart = el.selectionEnd = pos + 2;
+            }
+            live();
+          }
+        }}
+        onInput={live}
+        onBlur={() => commit(true)}
+        onPointerDown={(e) => e.stopPropagation()}
+      />
+      <div className="block-editor-hint">Ctrl+Enter で確定 · Esc で取消 · Tab で字下げ</div>
+    </div>
+  );
+}
+
+/** contentEditable overlay used to edit node / edge labels in place. */
+function LabelEditor() {
   const editing = useStore((s) => s.editing)!;
   const view = useStore((s) => s.view);
   const layout = useStore((s) => s.layout);

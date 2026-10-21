@@ -132,7 +132,7 @@ export function summarize(src: string, a: Analysis) {
 export function measureNodes(a: Analysis, measure: Measure) {
   const r1 = (v: number) => Math.round(v * 10) / 10;
   return a.layout.nodes
-    .filter((l) => l.def.label && l.kind !== 'image')
+    .filter((l) => (l.def.label || l.blocks) && l.kind !== 'image')
     .map((l) => ({
       id: l.id,
       kind: l.kind,
@@ -183,8 +183,8 @@ export type Op =
   | { op: 'set-page'; id: string; label?: string; layout?: string | null; rename?: string }
   | { op: 'add-layout'; name: string; extends?: string };
 
-const DEFAULT_SIZE: Record<ShapeKind, [number, number]> = { rect: [140, 60], round: [140, 60], ellipse: [120, 72], diamond: [140, 90], trap: [150, 64], para: [150, 60], hex: [150, 64], cross: [60, 60], plus: [60, 60], text: [120, 36], image: [160, 120] };
-const STEM: Record<ShapeKind, string> = { rect: 'box', round: 'box', ellipse: 'oval', diamond: 'cond', trap: 'trap', para: 'io', hex: 'hex', cross: 'cross', plus: 'plus', text: 'note', image: 'img' };
+const DEFAULT_SIZE: Record<ShapeKind, [number, number]> = { rect: [140, 60], round: [140, 60], ellipse: [120, 72], diamond: [140, 90], trap: [150, 64], para: [150, 60], hex: [150, 64], cross: [60, 60], plus: [60, 60], text: [120, 36], image: [160, 120], table: [480, 180], list: [480, 200] };
+const STEM: Record<ShapeKind, string> = { rect: 'box', round: 'box', ellipse: 'oval', diamond: 'cond', trap: 'trap', para: 'io', hex: 'hex', cross: 'cross', plus: 'plus', text: 'note', image: 'img', table: 'table', list: 'list' };
 
 function need(doc: Doc, id: string, write = true) {
   const n = doc.nodeMap.get(id);

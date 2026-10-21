@@ -181,3 +181,77 @@ describe('deck checks', () => {
     expect(checkLayout(lay, computeLayout(lay, approxMeasureFn)).map((i) => i.id)).toContain('text:pageno');
   });
 });
+
+import { setNodeBody, extractText, pasteText } from './dsl/patch';
+import { parseList, parseTable } from './text/blocks';
+import { exportTikz } from './exportFormats';
+
+const TABLE = `table res at (0, 0) size 400x120 align=l,r {
+  | Method | Acc |
+  |--------|----:|
+  | ViT-S  | 79.8 |
+  | **Ours** | **82.1** |
+}
+list pts at (0, 200) size 400x200 {
+  - 一段目
+    - 二段目
+  1. 番号
+  続き
+}
+rect after "後" at (500, 0) size 100x60
+`;
+
+describe('table / list', () => {
+  it('parses bodies without breaking the following statements', () => {
+    const d = parse(TABLE);
+    expect(d.diagnostics).toEqual([]);
+    expect(d.nodes.map((n) => [n.id, n.kind])).toEqual([
+      ['res', 'table'],
+      ['pts', 'list'],
+      ['after', 'rect'],
+    ]);
+    expect(d.nodeMap.get('res')!.body!.text.split('\n')[0]).toBe('| Method | Acc |');
+    expect(d.nodeMap.get('res')!.attrs.align).toBe('l,r');
+  });
+  it('reads Markdown tables and nested lists', () => {
+    const t = parseTable('| a | b |\n|:-:|--:|\n| 1 | 2 |\n| x \\| y | $a|b$ |', {});
+    expect(t).toEqual({ rows: [['a', 'b'], ['1', '2'], ['x | y', '$a|b$']], header: 1, align: ['c', 'r'] });
+    expect(parseList('- a\n  - b\n1. c\nmore').map((i) => [i.level, i.marker, i.text])).toEqual([
+      [0, '•', 'a'],
+      [1, '–', 'b'],
+      [0, '1.', 'c'],
+      [0, null, 'more'],
+    ]);
+  });
+  it('fits tables and lists and flags overflow', () => {
+    const d = parse(TABLE);
+    const l = computeLayout(d, approxMeasureFn);
+    const res = l.nodeMap.get('res')!;
+    expect(res.blocks!.pieces.length).toBe(6);
+    expect(res.blocks!.rules.length).toBe(3); // top, under header, bottom
+    expect(res.text.overflow).toBe(false);
+    expect(res.blocks!.pieces.find((p) => p.lines[0] === 'Ours')!.weight).toBe(700);
+    const tiny = parse(TABLE.replace('size 400x120', 'size 60x20'));
+    expect(checkLayout(tiny, computeLayout(tiny, approxMeasureFn)).map((i) => i.id)).toContain('text:res');
+    expect(exportTikz(l)).toContain('{Ours}');
+  });
+  it('rewrites a body in place and keeps it through copy / paste', () => {
+    const d = parse(TABLE);
+    const s = setNodeBody(TABLE, d, 'pts', '- 新しい\n  - 入れ子');
+    expect(s).toContain('list pts at (0, 200) size 400x200 {\n  - 新しい\n    - 入れ子\n}\nrect after');
+    const plain = 'list a at (0, 0) size 100x100\n';
+    expect(setNodeBody(plain, parse(plain), 'a', '- x')).toBe('list a at (0, 0) size 100x100 {\n  - x\n}\n');
+    const clip = extractText(TABLE, d, ['res']);
+    expect(clip.startsWith('table res at (0, 0) size 400x120 align=l,r {\n  | Method | Acc |')).toBe(true);
+    const r = pasteText(TABLE, d, clip, 10, 10);
+    expect(parse(r.src).nodeMap.get(r.ids[0])!.body!.text).toBe(d.nodeMap.get('res')!.body!.text);
+  });
+  it('fills a list slot with a block on a page', () => {
+    const src = `layout base {\n  slot body list at (40, 120) size 600x400\n}\npage p layout=base {\n  body {\n    - a\n    - b\n  }\n  rect x at (700, 120) size 100x60\n}\n`;
+    const d = parse(src, { page: 'p' });
+    expect(d.diagnostics).toEqual([]);
+    expect(d.nodeMap.get('body')).toMatchObject({ kind: 'list', slot: 'body', x: 40 });
+    expect(d.nodeMap.get('body')!.body!.text).toBe('- a\n- b');
+    expect(d.nodes.map((n) => n.id)).toEqual(['body', 'x']);
+  });
+});

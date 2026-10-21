@@ -143,11 +143,11 @@ export function tokenize(src: string): Tok[] {
 
 // ───────────────────────────── parser ─────────────────────────────
 
-export const NODE_ATTRS = new Set(['fill', 'stroke', 'text', 'lw', 'dash', 'font', 'weight', 'in', 'overlap', 'skew', 'radius', 'opacity', 'valign', 'halign', 'dir', 'pad', 'rotate', 'src', 'fit', 'ignore']);
+export const NODE_ATTRS = new Set(['fill', 'stroke', 'text', 'lw', 'dash', 'font', 'weight', 'in', 'overlap', 'skew', 'radius', 'opacity', 'valign', 'halign', 'dir', 'pad', 'rotate', 'src', 'fit', 'ignore', 'header', 'align', 'cols', 'rules']);
 export const EDGE_ATTRS = new Set(['stroke', 'lw', 'dash', 'route', 'bend', 'text', 'font', 'fromat', 'toat', 'ignore']);
 
-/** Attributes whose value may be a comma-separated list: `ignore=overlap,through`. */
-const LIST_ATTRS = new Set(['ignore']);
+/** Attributes whose value may be a comma-separated list: `ignore=overlap,through`, `cols=2,1,1`. */
+const LIST_ATTRS = new Set(['ignore', 'align', 'cols']);
 
 type ParsedEnd = { id: string; port?: string; portTok?: Tok; pt?: EndPoint; span: Span; next: number };
 
@@ -325,7 +325,7 @@ function scanBlocks(src: string) {
       blocks.push({ type: words[0], line: lineNo, lineStart, bodyFrom: Math.min(off, src.length), bodyTo: src.length, end: src.length, indent: '', closed: false });
       stack.push({ type: words[0], idx: blocks.length - 1, lineStart, braceAt });
       blank(braceAt, braceAt + 1);
-    } else if (RAW_KINDS.has(words[0]) || (inBlock && (RAW_KINDS.has(words[1]) || (words[0] === 'slot' && RAW_KINDS.has(words[2]))))) {
+    } else if (RAW_KINDS.has(words[0]) || (inBlock && words[0] !== 'style')) {
       raws.push({ headerLineStart: lineStart, bodyFrom: Math.min(off, src.length), bodyTo: src.length });
       stack.push({ type: 'raw', idx: raws.length - 1, lineStart, braceAt });
       blank(braceAt, braceAt + 1);
@@ -429,7 +429,7 @@ function parseFile(src: string): Parsed {
           end = v.to;
         i += 3;
         if (LIST_ATTRS.has(t.value)) {
-          while (isPunct(ts[i], ',') && ts[i + 1]?.type === 'ident') {
+          while (isPunct(ts[i], ',') && (ts[i + 1]?.type === 'ident' || ts[i + 1]?.type === 'num')) {
             value += ',' + ts[i + 1].value;
             end = ts[i + 1].to;
             i += 2;
@@ -496,8 +496,8 @@ function parseFile(src: string): Parsed {
       line: st.line,
       spans: { stmt: stmtSpan, lines: raw ? { from: lines.from, to: Math.min(src.length, nextLine(src, raw.bodyTo)) } : lines, label: out.label?.span, at: g.at, size: g.size, id: { from: idTok.from, to: idTok.to }, ...extra },
     };
-    if (raw) node.body = { text: src.slice(raw.bodyFrom, raw.bodyTo).replace(/\n$/, ''), span: { from: raw.bodyFrom, to: raw.bodyTo } };
-    else if (RAW_KINDS.has(kind)) node.body = { text: '', span: { from: stmtSpan.to, to: stmtSpan.to } };
+    if (raw) node.body = { text: dedent(src.slice(raw.bodyFrom, raw.bodyTo).replace(/\n$/, '')), span: { from: raw.bodyFrom, to: raw.bodyTo }, braces: true };
+    else if (RAW_KINDS.has(kind)) node.body = { text: '', span: { from: stmtSpan.to, to: stmtSpan.to }, braces: false };
     return { node, g };
   };
 
@@ -726,6 +726,13 @@ function parseFile(src: string): Parsed {
 
 const PAGE_ATTRS = new Set(['layout']);
 
+/** Lines without their common indentation. */
+export function dedent(text: string): string {
+  const lines = text.split('\n');
+  const ind = Math.min(...lines.filter((l) => l.trim()).map((l) => /^[ \t]*/.exec(l)![0].length));
+  return Number.isFinite(ind) ? lines.map((l) => l.slice(Math.min(ind, /^[ \t]*/.exec(l)![0].length))).join('\n') : text;
+}
+
 /** An optional shape kind right after a slot name (not `at` / `size` / `key=`). */
 function kindAt(ts: Tok[], i: number): Tok | undefined {
   const t = ts[i];
@@ -766,6 +773,7 @@ function assemble(P: Parsed, nodeIn: NodeDef[], edgeIn: EdgeDef[], extra: Diagno
     }
     nodes.push(n);
     nodeMap.set(n.id, n);
+    if (n.body && !RAW_KINDS.has(n.kind) && !n.locked) err(n.spans.stmt, `{ } の中身は table / list でだけ使えます（${n.kind} では無視されます）`, 'syntax', 'warning');
   }
 
   // resolve edges after all nodes are known (forward references are fine)

@@ -46,7 +46,8 @@ export function exportTikz(layout: Layout): string {
     const s = n.style;
     const draw = color(s.stroke);
     const fill = color(s.fill);
-    const opts = [draw ? `draw=${draw}` : 'draw=none', fill ? `fill=${fill}` : null, `line width=${f(s.lw)}pt`].filter(Boolean).join(', ') + dash(s.dash) + (n.kind === 'round' ? `, rounded corners=${f(s.radius)}pt` : '');
+    const frame = n.kind === 'table' ? undefined : draw;
+    const opts = [frame ? `draw=${frame}` : 'draw=none', fill ? `fill=${fill}` : null, `line width=${f(s.lw)}pt`].filter(Boolean).join(', ') + dash(s.dash) + (n.kind === 'round' ? `, rounded corners=${f(s.radius)}pt` : '');
     const { x, y, w, h } = n.box;
     let shape: string;
     if (n.kind === 'ellipse' || n.kind === 'cross' || n.kind === 'plus') shape = `(${f(x + w / 2)},${f(-(y + h / 2))}) ellipse [x radius=${f(w / 2)}pt, y radius=${f(h / 2)}pt]`;
@@ -58,10 +59,22 @@ export function exportTikz(layout: Layout): string {
       const keep = s.fit === 'fill' ? '' : ', keepaspectratio';
       body.push(`  \\node[anchor=center, inner sep=0pt] at (${f(x + w / 2)},${f(-(y + h / 2))}) {\\includegraphics[width=${f(w)}pt, height=${f(h)}pt${keep}]{${s.src}}};`);
     }
-    if (draw || fill) body.push(`  \\path[${opts}] ${shape};`);
+    if (frame || fill) body.push(`  \\path[${opts}] ${shape};`);
+    if (n.blocks) {
+      // table rules and the text pieces of tables / lists
+      const rc = color(s.stroke) ?? color(s.text);
+      for (const r of n.blocks.rules) body.push(`  \\draw[${rc ? `draw=${rc}, ` : ''}line width=${f(r.lw)}pt] (${f(r.x1)},${f(-r.y1)}) -- (${f(r.x2)},${f(-r.y2)});`);
+      const tc = color(s.text);
+      for (const p of n.blocks.pieces) {
+        const size = p.size * PX;
+        const font = `font=\\fontsize{${size.toFixed(1)}}{${(size * LINE_HEIGHT).toFixed(1)}}\\selectfont${p.weight >= 600 ? '\\bfseries' : ''}`;
+        const anchor = p.anchor === 'left' ? 'north west' : p.anchor === 'right' ? 'north east' : 'north';
+        body.push(`  \\node[align=${p.anchor}, anchor=${anchor}, inner sep=0pt${tc ? `, text=${tc}` : ''}, ${font}] at (${f(p.x)},${f(-p.y)}) {${p.lines.map(texLine).join('\\\\ ')}};`);
+      }
+    }
     if (draw && (n.kind === 'cross' || n.kind === 'plus'))
       for (const [p, q] of junctionStrokes(n.kind, n.box)) body.push(`  \\draw[draw=${draw}, line width=${f(s.lw)}pt] (${f(p.x)},${f(-p.y)}) -- (${f(q.x)},${f(-q.y)});`);
-    if (n.def.label && n.kind !== 'image') {
+    if (n.def.label && n.kind !== 'image' && !n.blocks) {
       const tc = color(s.text);
       const size = n.text.size * PX;
       const lines = n.text.lines.map(texLine).join('\\\\ ');

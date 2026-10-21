@@ -3,7 +3,7 @@
  * Every UI mutation goes through these helpers so that the text stays the
  * single source of truth and diffs stay small.
  */
-import { endText, parse, viewOf } from './parse';
+import { dedent, endText, parse, viewOf } from './parse';
 import { POINT_END, type ArrowOp, type Doc, type EdgeDef, type NodeDef, type Port, type ShapeKind, type Span } from './types';
 
 export interface Edit {
@@ -131,6 +131,19 @@ export function setNodeLabel(src: string, doc: Doc, id: string, label: string): 
   return applyEdits(src, [{ from: pos, to: pos, insert: ' ' + quote(label) }]);
 }
 
+/** Replace the `{ ... }` content of a table / list (adds the braces when there are none). */
+export function setNodeBody(src: string, doc: Doc, id: string, text: string): string {
+  const n = editable(doc, id);
+  if (!n?.body) return src;
+  const indent = /^[ \t]*/.exec(src.slice(n.spans.lines.from))![0];
+  const lines = text
+    .replace(/\s+$/, '')
+    .split('\n')
+    .map((l) => (l.trim() ? indent + '  ' + l.replace(/\s+$/, '') : ''));
+  if (n.body.braces) return applyEdits(src, [{ ...n.body.span, insert: lines.length && text.trim() ? lines.join('\n') + '\n' : '' }]);
+  return applyEdits(src, [{ ...n.body.span, insert: ` {\n${text.trim() ? lines.join('\n') + '\n' : ''}${indent}}` }]);
+}
+
 export function setNodesAttr(src: string, doc: Doc, ids: Iterable<string>, key: string, value: string | undefined): string {
   const edits: Edit[] = [];
   for (const id of ids) {
@@ -183,6 +196,8 @@ export interface NewNode {
   h: number;
   attrs?: Record<string, string>;
   classes?: string[];
+  /** table / list content */
+  body?: string;
 }
 
 export function nodeLine(n: NewNode): string {
@@ -191,6 +206,7 @@ export function nodeLine(n: NewNode): string {
   s += ` at (${fmtNum(n.x)}, ${fmtNum(n.y)}) size ${fmtNum(n.w)}x${fmtNum(n.h)}`;
   for (const [k, v] of Object.entries(n.attrs ?? {})) s += ` ${k}=${fmtValue(v)}`;
   for (const c of n.classes ?? []) s += ` .${c}`;
+  if (n.body !== undefined) s += ` {\n${n.body.replace(/\s+$/, '').split('\n').map((l) => (l.trim() ? '  ' + l : '')).join('\n')}\n}`;
   return s;
 }
 
@@ -205,7 +221,10 @@ const lastOf = <T extends { locked?: boolean }>(xs: T[]): T | undefined => xs.fi
 /** Insert lines right after `after` (a statement's line span), at the end of the view's page / layout block, or at EOF. */
 function insertLines(src: string, lines: string[], after: Span | undefined, doc?: Doc): string {
   const block = doc?.deck?.block;
-  const text = lines.map((l) => (l && block ? block.indent + l : l)).join('\n');
+  const text = lines
+    .flatMap((l) => l.split('\n'))
+    .map((l) => (l && block ? block.indent + l : l))
+    .join('\n');
   const pos = after?.to ?? block?.insertAt;
   if (pos !== undefined) {
     const needsNl = pos > 0 && src[pos - 1] !== '\n';
@@ -315,7 +334,7 @@ export function extractText(src: string, doc: Doc, nodeIds: Iterable<string>, ed
   const ids = new Set(nodeIds);
   const keys = new Set(edgeKeys);
   const parts: string[] = [];
-  for (const n of doc.nodes) if (ids.has(n.id)) parts.push(src.slice(n.spans.stmt.from, n.spans.stmt.to));
+  for (const n of doc.nodes) if (ids.has(n.id)) parts.push(n.body?.braces ? dedent(src.slice(n.spans.lines.from, n.spans.lines.to).replace(/\s+$/, '')) : src.slice(n.spans.stmt.from, n.spans.stmt.to));
   const inside = (id: string) => id === POINT_END || ids.has(id);
   for (const e of doc.edges) if (keys.has(e.key) || (inside(e.from) && inside(e.to) && (ids.has(e.from) || ids.has(e.to)))) parts.push(src.slice(e.spans.stmt.from, e.spans.stmt.to));
   return parts.join('\n');
@@ -345,7 +364,7 @@ export function pasteText(src: string, doc: Doc, text: string, dx: number, dy: n
       if (rename.has(attrs.in)) attrs.in = rename.get(attrs.in)!;
       else delete attrs.in;
     }
-    return nodeLine({ kind: n.kind, id: rename.get(n.id)!, label: n.label, x: n.x + dx, y: n.y + dy, w: n.w, h: n.h, attrs, classes: n.classes });
+    return nodeLine({ kind: n.kind, id: rename.get(n.id)!, label: n.label, x: n.x + dx, y: n.y + dy, w: n.w, h: n.h, attrs, classes: n.classes, body: n.body?.braces ? n.body.text : undefined });
   });
   let out = nodeLines.length ? insertAfterNodes(src, doc, nodeLines) : src;
   // absolute point ends move with the paste offset; relative ones follow their shape

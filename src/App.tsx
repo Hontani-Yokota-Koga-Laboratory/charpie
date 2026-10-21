@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { Canvas } from './components/Canvas';
 import { CodePanel } from './components/CodePanel';
 import { Inspector } from './components/Inspector';
-import { HealthPanel, Help, TOOL_KEYS, Toast, Toolbar, TopBar, ZoomBar, doOpen, doSave, fitAll } from './components/Chrome';
+import { HealthPanel, Help, Toast, TopBar, ZoomBar, doOpen, doSave, fitAll } from './components/Chrome';
+import { TOOL_KEYS, Toolbar, setPaletteOpen } from './components/Tools';
 import { useStore } from './store';
 import { extractText, pasteText, removeItems } from './dsl/patch';
 import { translate } from './ops/arrange';
@@ -105,6 +106,11 @@ function useShortcuts(openHelp: () => void) {
       }
       if (e.key === '?') {
         openHelp();
+        return;
+      }
+      if (e.key === '/' && !mod) {
+        e.preventDefault();
+        setPaletteOpen(true);
         return;
       }
       if (!mod && !e.altKey && TOOL_KEYS[k]) {

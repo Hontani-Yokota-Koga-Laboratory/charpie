@@ -11,6 +11,24 @@ export function ShapeIcon({ kind, size = 18 }: { kind: ShapeKind; size?: number 
       </svg>
     );
   }
+  if (kind === 'table') {
+    return (
+      <svg width={size} height={size} viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round">
+        <path d="M2.5 4h13M2.5 7.5h13M2.5 14h13" />
+        <path d="M7 9.8v2.4M11.5 9.8v2.4" strokeWidth={1.2} />
+      </svg>
+    );
+  }
+  if (kind === 'list') {
+    return (
+      <svg width={size} height={size} viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round">
+        <circle cx={3.5} cy={5} r={0.6} fill="currentColor" />
+        <circle cx={3.5} cy={9} r={0.6} fill="currentColor" />
+        <circle cx={3.5} cy={13} r={0.6} fill="currentColor" />
+        <path d="M7 5h8M7 9h8M7 13h6" />
+      </svg>
+    );
+  }
   if (kind === 'image') {
     return (
       <svg width={size} height={size} viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinejoin="round" strokeLinecap="round">
@@ -40,6 +58,8 @@ export const SHAPE_NAMES: Record<ShapeKind, string> = {
   plus: '⊕（丸に＋）',
   text: 'テキスト',
   image: '画像',
+  table: '表',
+  list: '箇条書き',
 };
 
 /**
@@ -110,14 +130,14 @@ export function NumField({ label, value, onChange, onScrubStart, onScrubEnd, ste
 }
 
 /** Text input / textarea that applies every keystroke live; one focus session = one undo step. */
-export function LiveText({ value, onChange, multiline, placeholder, rows }: { value: string; onChange: (v: string) => void; multiline?: boolean; placeholder?: string; rows?: number }) {
+export function LiveText({ value, onChange, multiline, placeholder, rows, mono }: { value: string; onChange: (v: string) => void; multiline?: boolean; placeholder?: string; rows?: number; mono?: boolean }) {
   const [text, setText] = useState(value);
   const focused = useRef(false);
   useEffect(() => {
     if (!focused.current) setText(value);
   }, [value]);
   const props = {
-    className: 'field',
+    className: mono ? 'field mono' : 'field',
     value: text,
     placeholder,
     onFocus: () => {

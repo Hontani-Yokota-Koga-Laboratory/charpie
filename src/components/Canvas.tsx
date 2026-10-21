@@ -9,6 +9,7 @@ import { reparse, useStore } from '../store';
 import { EdgeLabel, EdgeShape, ImageHrefContext, NodeShape, diagramBounds } from './Diagram';
 import { assetHref, insertImages, isImageFile } from '../images';
 import { InlineEditor } from './InlineEditor';
+import { STARTER_BODY } from './Tools';
 
 type Handle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
 const HANDLES: Handle[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
@@ -27,8 +28,10 @@ export const DEFAULT_SIZE: Record<ShapeKind, [number, number]> = {
   plus: [60, 60],
   text: [120, 36],
   image: [160, 120],
+  table: [480, 180],
+  list: [480, 200],
 };
-export const ID_STEM: Record<ShapeKind, string> = { rect: 'box', round: 'box', ellipse: 'oval', diamond: 'cond', trap: 'trap', para: 'io', hex: 'hex', cross: 'cross', plus: 'plus', text: 'note', image: 'img' };
+export const ID_STEM: Record<ShapeKind, string> = { rect: 'box', round: 'box', ellipse: 'oval', diamond: 'cond', trap: 'trap', para: 'io', hex: 'hex', cross: 'cross', plus: 'plus', text: 'note', image: 'img', table: 'table', list: 'list' };
 
 interface Guide {
   x1: number;
@@ -672,7 +675,7 @@ export function Canvas() {
       const [dw, dh] = DEFAULT_SIZE[g.kind];
       const box = overlay.createBox && overlay.createBox.w >= 8 && overlay.createBox.h >= 8 ? overlay.createBox : { x: snapTo(g.start.x - dw / 2, grid), y: snapTo(g.start.y - dh / 2, grid), w: dw, h: dh };
       const id = uniqueId(s.doc, ID_STEM[g.kind]);
-      s.apply((src, doc) => addNodes(src, doc, [{ kind: g.kind, id, x: box.x, y: box.y, w: box.w, h: box.h }]));
+      s.apply((src, doc) => addNodes(src, doc, [{ kind: g.kind, id, x: box.x, y: box.y, w: box.w, h: box.h, body: STARTER_BODY[g.kind] }]));
       // auto-parent into the smallest container under the new node
       const st = useStore.getState();
       const parent = smallestContainer(st.layout, box, new Set([id]));

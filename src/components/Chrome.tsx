@@ -10,17 +10,14 @@ import {
   FileCode,
   FilePlus,
   FolderOpen,
-  Hand,
   Image,
   Moon,
-  MousePointer2,
   PanelLeft,
   Redo2,
   Save,
   RotateCcw,
   Scan,
   ShieldCheck,
-  Spline,
   Sun,
   TriangleAlert,
   Undo2,
@@ -28,24 +25,21 @@ import {
   ZoomIn,
   ZoomOut,
 } from 'lucide-react';
-import { useStore, type Tool, type ViewMode } from '../store';
+import { useStore, type ViewMode } from '../store';
 import { IGNORE_NAME, ISSUE_LABEL } from '../check/check';
 import { ignoreIssue, unignoreIssue } from '../actions';
 import { autoFix } from '../check/resolve';
 import { canvasMeasure } from '../text/fit';
 import { download, exportPng, exportSvgStandalone, exportTikz, openFile, printPages, resetFileHandle, saveFile } from '../export';
 import { createFile, flush, openFile as openRemoteFile, revert, save as saveRemote } from '../remote';
-import { Bot, Ellipsis, EyeOff, Layers, Radio, SlidersHorizontal } from 'lucide-react';
+import { Bot, Ellipsis, EyeOff, Radio } from 'lucide-react';
 import { useMobile } from '../useMobile';
-import { pickImages } from '../images';
 import { fitView } from './Canvas';
-import { ShapeIcon, SHAPE_NAMES } from './ui';
 import { FileGallery, useGallery } from './FileGallery';
 import { FileDown, LayoutGrid, Presentation } from 'lucide-react';
 import { parse } from '../dsl/parse';
 import { toDeck } from '../dsl/patch';
 import { computeLayout } from '../layout';
-import type { ShapeKind } from '../dsl/types';
 
 export function BrandMark() {
   return (
@@ -466,70 +460,6 @@ export function TopBar({ onHelp }: { onHelp: () => void }) {
       </div>
       <FileGallery />
     </header>
-  );
-}
-
-const TOOLS: { t: Tool; key: string; icon: JSX.Element; name: string }[] = [
-  { t: 'select', key: 'V', icon: <MousePointer2 size={17} />, name: '選択' },
-  { t: 'pan', key: 'H', icon: <Hand size={17} />, name: '手のひら' },
-  { t: 'edge', key: 'A', icon: <Spline size={17} />, name: '矢印' },
-];
-export const SHAPE_TOOLS: { t: ShapeKind; key: string }[] = [
-  { t: 'rect', key: 'R' },
-  { t: 'round', key: 'U' },
-  { t: 'ellipse', key: 'O' },
-  { t: 'diamond', key: 'D' },
-  { t: 'trap', key: 'P' },
-  { t: 'para', key: 'L' },
-  { t: 'hex', key: 'X' },
-  { t: 'text', key: 'T' },
-];
-export const TOOL_KEYS: Record<string, Tool> = Object.fromEntries([...TOOLS.map((t) => [t.key.toLowerCase(), t.t]), ...SHAPE_TOOLS.map((t) => [t.key.toLowerCase(), t.t])]);
-
-export function Toolbar() {
-  const tool = useStore((s) => s.tool);
-  const setTool = useStore((s) => s.setTool);
-  const multi = useStore((s) => s.multiSelect);
-  const mobile = useMobile();
-  return (
-    <div className="float toolbar" onPointerDown={(e) => e.stopPropagation()}>
-      {mobile && (
-        <>
-          <button className={'tool-btn' + (multi ? ' on' : '')} aria-label="複数選択" onClick={() => useStore.getState().setMultiSelect(!multi)}>
-            <Layers size={17} />
-          </button>
-          <button className="tool-btn" aria-label="全体表示" onClick={() => fitAll()}>
-            <Scan size={17} />
-          </button>
-          <button
-            className="tool-btn"
-            aria-label="ドキュメント設定"
-            onClick={() => {
-              const st = useStore.getState();
-              st.clearSelection();
-              st.setDocSheet(!st.docSheet);
-            }}
-          >
-            <SlidersHorizontal size={17} />
-          </button>
-          <div className="sep" />
-        </>
-      )}
-      {TOOLS.filter((x) => !(mobile && x.t === 'pan')).map((x) => (
-        <button key={x.t} className={'tool-btn tip' + (tool === x.t ? ' on' : '')} data-tip={`${x.name}  ${x.key}`} onClick={() => setTool(x.t)}>
-          {x.icon}
-        </button>
-      ))}
-      <div className="sep" />
-      {SHAPE_TOOLS.map((x) => (
-        <button key={x.t} className={'tool-btn tip' + (tool === x.t ? ' on' : '')} data-tip={`${SHAPE_NAMES[x.t]}  ${x.key}\n(Shift+クリックで連続配置)`} onClick={() => setTool(x.t)}>
-          <ShapeIcon kind={x.t} />
-        </button>
-      ))}
-      <button className="tool-btn tip" data-tip={'画像を追加\n(Ctrl+V で貼り付け・ドロップでも可)'} onClick={() => pickImages()}>
-        <ShapeIcon kind="image" />
-      </button>
-    </div>
   );
 }
 
