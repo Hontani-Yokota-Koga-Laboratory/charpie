@@ -658,7 +658,8 @@ export function Toast() {
   useEffect(() => {
     if (!toast) return;
     setVisible(true);
-    const t = setTimeout(() => setVisible(false), 2200);
+    // with a button (e.g. undo a delete): long enough to reach it
+    const t = setTimeout(() => setVisible(false), toast.action ? 8000 : 2200);
     return () => clearTimeout(t);
   }, [toast]);
   if (!toast || !visible) return null;
@@ -666,6 +667,17 @@ export function Toast() {
     <div className="float toast" key={toast.id}>
       {toast.tone === 'warn' ? <TriangleAlert size={16} color="var(--warn)" /> : <CircleCheck size={16} color="var(--ok)" />}
       {toast.text}
+      {toast.action && (
+        <button
+          className="btn toast-action"
+          onClick={() => {
+            setVisible(false);
+            toast.action!.run();
+          }}
+        >
+          {toast.action.label}
+        </button>
+      )}
     </div>
   );
 }

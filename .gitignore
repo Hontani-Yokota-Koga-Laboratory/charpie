@@ -33,3 +33,5 @@ Thumbs.db
 diagrams/*
 !diagrams/mae_example.charpie
 !diagrams/deck_demo.charpie
+# deleted .charpie files (restorable from the UI)
+.trash/

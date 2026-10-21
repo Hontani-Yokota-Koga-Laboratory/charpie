@@ -1098,6 +1098,11 @@ textarea.field {
 }
 
 /* toast */
+.toast-action {
+  margin-left: 6px;
+  height: 26px;
+  padding: 0 10px;
+}
 .toast {
   position: fixed;
   left: 92px;
@@ -1108,7 +1113,8 @@ textarea.field {
   gap: 9px;
   font-size: 12.5px;
   font-weight: 550;
-  z-index: 100;
+  /* above the file gallery (200): the undo of a delete made there */
+  z-index: 300;
   animation: toast-in 0.22s cubic-bezier(0.2, 0.9, 0.3, 1.2);
 }
 @keyframes toast-in {

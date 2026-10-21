@@ -32,6 +32,9 @@ POST /api/ops?file=NAME                 body = one op or a JSON array of ops (ap
      add "?strict=1" to reject the change (409) if it introduces new errors
 POST /api/asset?file=NAME&name=x.png   body = image bytes (Content-Type image/png|jpeg|gif|webp|svg+xml);
                                         saved as assets/x-<hash>.png next to the .charpie → {"src":"assets/…"}
+DELETE /api/files?file=NAME&hash=H    move the file to .trash/<time>/ (not listed; hash = refuse if it changed)
+                                        → {"trashed":".trash/…"}; only when the user asked for it
+POST /api/files/restore {"trashed":".trash/…"}   put it back (refused if a file with that name exists)
 POST /api/open    {"file":"NAME","page":"ID"}            show this file (and page / "layout") in the user's browser
 POST /api/select  {"nodes":["id"],"edges":["a->b#0"],"page":"ID"}   highlight shapes for the user
 

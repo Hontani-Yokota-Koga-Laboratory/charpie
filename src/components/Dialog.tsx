@@ -135,10 +135,12 @@ export function askConfirm(o: { title: string; message?: ReactNode; ok?: string;
 
 function ConfirmButtons({ o, done }: { o: Parameters<typeof askConfirm>[0]; done: (v: boolean | null) => void }) {
   const ref = useRef<HTMLButtonElement>(null);
-  useEffect(() => ref.current?.focus(), []);
+  const cancel = useRef<HTMLButtonElement>(null);
+  // a destructive choice is never one Enter away
+  useEffect(() => (o.danger ? cancel : ref).current?.focus(), [o.danger]);
   return (
     <>
-      <button type="button" className="btn" onClick={() => done(false)}>
+      <button ref={cancel} type="button" className="btn" onClick={() => done(false)}>
         {o.cancel ?? 'キャンセル'}
       </button>
       <button ref={ref} type="submit" className={'btn ' + (o.danger ? 'danger' : 'primary')}>

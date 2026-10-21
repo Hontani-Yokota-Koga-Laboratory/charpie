@@ -6,9 +6,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { create } from 'zustand';
-import { ChevronDown, ChevronLeft, ChevronRight, FilePlus, Folder, FolderOpen, LayoutGrid, Maximize2, Presentation, Search, Shapes, TriangleAlert, X } from 'lucide-react';
+import { ChevronDown, ChevronLeft, ChevronRight, FilePlus, Folder, FolderOpen, LayoutGrid, Maximize2, Presentation, Search, Shapes, Trash2, TriangleAlert, X } from 'lucide-react';
 import { useStore } from '../store';
-import { openFile } from '../remote';
+import { deleteFile, openFile } from '../remote';
+import { askConfirm } from './Dialog';
 import { newFileDialog } from './NewFile';
 import './FileGallery.css';
 
@@ -255,6 +256,39 @@ function GalleryModal({ onClose }: { onClose: () => void }) {
     if (f !== workspace.file) await openFile(f);
   };
 
+  const remove = async (f: string) => {
+    const i = info[f];
+    const current = f === workspace.file;
+    // other files that draw this one (image src="….charpie")
+    const users = files.filter((g) => g !== f && info[g]?.src.includes(baseName(f) + '.charpie'));
+    const what = i?.pages != null ? `スライド（${i.pages} ページ）` : '図';
+    const ok = await askConfirm({
+      title: `「${baseName(f)}」を削除しますか？`,
+      message: (
+        <>
+          {f} （{what}）をワークスペースの <code>.trash/</code> に移動します。直後のトーストの「元に戻す」か、<code>.trash/</code> から取り出せば戻せます。
+          {current && workspace.dirty && (
+            <>
+              <br />
+              <b>このファイルには未保存の編集があります。</b>削除すると失われます。
+            </>
+          )}
+          {users.length > 0 && (
+            <>
+              <br />
+              このファイルを埋め込んでいる図があります: {users.map(baseName).join('、')}
+            </>
+          )}
+        </>
+      ),
+      ok: '削除',
+      danger: true,
+    });
+    if (!ok) return;
+    if (preview === f) setPreview(null);
+    await deleteFile(f, i?.hash);
+  };
+
   const newFile = async (dir: string) => {
     onClose();
     await newFileDialog(dir, kind === 'slides' ? 'slides' : kind === 'diagram' ? 'diagram' : undefined);
@@ -300,6 +334,11 @@ function GalleryModal({ onClose }: { onClose: () => void }) {
     if (e.key === ' ') {
       e.preventDefault();
       setPreview(f);
+      return;
+    }
+    if (e.key === 'Delete') {
+      e.preventDefault();
+      remove(f);
       return;
     }
     if (!e.key.startsWith('Arrow')) return;
@@ -353,6 +392,16 @@ function GalleryModal({ onClose }: { onClose: () => void }) {
             }}
           >
             <Maximize2 size={14} />
+          </button>
+          <button
+            className="gal-zoom gal-del"
+            title="削除（Delete）"
+            onClick={(e) => {
+              e.stopPropagation();
+              remove(f);
+            }}
+          >
+            <Trash2 size={14} />
           </button>
           <div className="gal-badges">
             {i && i.pages !== null && (
@@ -503,6 +552,9 @@ function GalleryModal({ onClose }: { onClose: () => void }) {
             <kbd>→</kbd> 移動
           </span>
           <span>
+            <kbd>Delete</kbd> 削除
+          </span>
+          <span>
             <kbd>Esc</kbd> 閉じる
           </span>
           <span>
@@ -526,6 +578,9 @@ function GalleryModal({ onClose }: { onClose: () => void }) {
                   </button>
                   <button className="gal-close" title="次へ（→）" onClick={() => setPreview(flat[(flat.indexOf(preview) + 1) % flat.length])}>
                     <ChevronRight size={18} />
+                  </button>
+                  <button className="gal-close" title="削除" onClick={() => remove(preview)}>
+                    <Trash2 size={17} />
                   </button>
                   <button className="btn primary" onClick={() => go(preview)}>
                     開く <kbd>Enter</kbd>

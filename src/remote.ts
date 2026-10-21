@@ -19,6 +19,8 @@ let stateTimer: ReturnType<typeof setTimeout> | undefined;
 let pending: Promise<void> = Promise.resolve();
 /** latest disk version that arrived while there were unsaved edits */
 let incoming: { src: string; hash: string } | null = null;
+/** a delete this tab asked for: its "files" event is not an outside deletion */
+let deleting: string | null = null;
 
 const LAST_FILE = 'charpie:lastFile';
 
@@ -72,6 +74,55 @@ export async function createFile(name: string, src?: string): Promise<string | n
     return null;
   }
   await refreshFiles();
+  return body.file!;
+}
+
+/**
+ * Delete a file (the server moves it to .trash/, restorable from the toast).
+ * `hash` = the version the user saw; a file changed since then is not deleted.
+ */
+export async function deleteFile(file: string, hash?: string): Promise<boolean> {
+  const s = useStore.getState();
+  deleting = file;
+  let res: Awaited<ReturnType<typeof api<{ trashed?: string; error?: string; conflict?: boolean }>>>;
+  try {
+    res = await api(`/api/files?file=${encodeURIComponent(file)}${hash ? `&hash=${hash}` : ''}`, { method: 'DELETE' });
+  } catch {
+    deleting = null;
+    s.notify('サーバーに接続できません', 'warn');
+    return false;
+  }
+  const { status, body } = res;
+  if (status >= 400) {
+    deleting = null;
+    s.notify(body.conflict ? `${file} は外部で変更されていたため削除しませんでした` : (body.error ?? '削除に失敗しました'), 'warn');
+    return false;
+  }
+  if (s.workspace.file === file) {
+    // our own delete: leave the file quietly (no "deleted from disk" warning, no save)
+    clearTimeout(pushTimer);
+    pushTimer = undefined;
+    synced = '';
+    incoming = null;
+    s.setWorkspace({ file: null, dirty: false, conflict: false });
+  }
+  deleting = null;
+  const files = await refreshFiles();
+  if (!useStore.getState().workspace.file && files[0]) await openFile(files[0]);
+  const trashed = body.trashed!;
+  useStore.getState().notify(`${file} を削除しました`, 'ok', { label: '元に戻す', run: () => void restoreFile(trashed) });
+  return true;
+}
+
+export async function restoreFile(trashed: string): Promise<string | null> {
+  const { status, body } = await api<{ file?: string; error?: string }>('/api/files/restore', { method: 'POST', body: JSON.stringify({ trashed }) });
+  if (status >= 400) {
+    useStore.getState().notify(body.error ?? '元に戻せませんでした', 'warn');
+    return null;
+  }
+  await refreshFiles();
+  await openFile(body.file!);
+  useStore.getState().notify(`${body.file} を元に戻しました`);
   return body.file!;
 }
 
@@ -305,7 +356,7 @@ function connectEvents() {
       }
       case 'files':
         s.setWorkspace({ files: ev.files });
-        if (s.workspace.file && !ev.files.includes(s.workspace.file)) onDeleted(s.workspace.file);
+        if (s.workspace.file && s.workspace.file !== deleting && !ev.files.includes(s.workspace.file)) onDeleted(s.workspace.file);
         return;
       case 'open': {
         const show = () => {

@@ -105,6 +105,18 @@ export function createApi(ws: Workspace) {
           return send(res, 201, { ok: true, file });
         }
 
+        case 'DELETE /api/files': {
+          const name = q.get('file');
+          if (!name) throw new HttpError(400, 'file is required');
+          return send(res, 200, { ok: true, ...ws.trash(name, q.get('hash') ?? undefined) });
+        }
+
+        case 'POST /api/files/restore': {
+          const body = json<{ trashed: string }>(await readBody(req));
+          if (!body.trashed) throw new HttpError(400, 'trashed is required');
+          return send(res, 200, { ok: true, file: ws.restore(body.trashed) });
+        }
+
         case 'GET /api/doc': {
           const file = ws.pick(q.get('file'));
           const src = ws.read(file);

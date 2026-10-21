@@ -227,6 +227,13 @@
   opacity: 0;
   transition: opacity 0.12s;
 }
+.gal-del {
+  right: 42px;
+}
+.gal-del:hover {
+  color: #dc2626;
+  border-color: rgba(220, 38, 38, 0.4);
+}
 .gal-card:hover .gal-zoom,
 .gal-card:focus-visible .gal-zoom {
   opacity: 1;

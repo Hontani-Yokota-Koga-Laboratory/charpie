@@ -35,6 +35,9 @@ export function embedImages(dir: string, srcs: string[], within?: string): Map<s
   return out;
 }
 
+/** deleted files go here (dot folder: not listed, not watched) */
+const TRASH = '.trash';
+
 export interface BrowserState {
   file: string | null;
   hash: string;
@@ -119,6 +122,50 @@ export class Workspace {
     fs.renameSync(tmp, abs);
     this.known.set(rel, src);
     if (isNew) this.broadcast({ type: 'files', files: this.list() });
+    return rel;
+  }
+
+  /**
+   * "Delete" = move into `.trash/<time>/<rel>` (hidden from the list and the watcher), so it can be restored.
+   * `hash`: refuse when the file changed since the caller last saw it. Pictures in assets/ are left alone
+   * (other files may use them).
+   */
+  trash(name: string, hash?: string): { file: string; trashed: string } {
+    const { rel, abs } = this.resolve(name);
+    if (!fs.existsSync(abs)) throw new HttpError(404, `file not found: ${rel}`);
+    const cur = fs.readFileSync(abs, 'utf8');
+    if (hash && hashText(cur) !== hash) throw new HttpError(409, `file changed on disk: ${rel}`, { conflict: true, hash: hashText(cur) });
+    const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..*$/, '').replace('T', '-');
+    let dir = path.join(this.root, TRASH, stamp);
+    for (let i = 2; fs.existsSync(path.join(dir, rel)); i++) dir = path.join(this.root, TRASH, `${stamp}-${i}`);
+    const dest = path.join(dir, rel);
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.renameSync(abs, dest);
+    this.known.delete(rel);
+    this.broadcast({ type: 'files', files: this.list() });
+    return { file: rel, trashed: path.relative(this.root, dest).split(path.sep).join('/') };
+  }
+
+  /** Put a trashed file back where it was; never over an existing file. */
+  restore(trashed: string): string {
+    const norm = trashed.replace(/\\/g, '/');
+    const abs = path.resolve(this.root, norm);
+    const base = path.join(this.root, TRASH) + path.sep;
+    if (!abs.startsWith(base) || !abs.endsWith('.charpie')) throw new HttpError(400, `invalid trash path: ${trashed}`);
+    if (!fs.existsSync(abs)) throw new HttpError(404, `not in trash: ${trashed}`);
+    // .trash/<stamp>/<rel>
+    const rel = path.relative(base, abs).split(path.sep).slice(1).join('/');
+    const { abs: to } = this.resolve(rel);
+    if (fs.existsSync(to)) throw new HttpError(409, `already exists: ${rel}`);
+    fs.mkdirSync(path.dirname(to), { recursive: true });
+    fs.renameSync(abs, to);
+    try {
+      fs.rmdirSync(path.dirname(abs)); // the stamp folder, when empty
+    } catch {
+      /* not empty */
+    }
+    this.known.set(rel, fs.readFileSync(to, 'utf8'));
+    this.broadcast({ type: 'files', files: this.list() });
     return rel;
   }
 

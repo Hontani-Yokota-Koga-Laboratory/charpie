@@ -52,6 +52,10 @@ interface UiPrefs {
 
 /** What the inspector's X/Y mean, and what stays fixed when W/H change. */
 export type GeomAnchor = 'corner' | 'center';
+export interface ToastAction {
+  label: string;
+  run(): void;
+}
 
 const prefs = load<Partial<UiPrefs>>(LS_UI, {});
 const initialSrc = load<string>(LS_SRC, SAMPLE);
@@ -105,7 +109,7 @@ export interface State extends Derived {
   multiSelect: boolean;
   /** mobile: inspector sheet shown without a selection (document settings) */
   docSheet: boolean;
-  toast: { id: number; text: string; tone?: 'ok' | 'warn' } | null;
+  toast: { id: number; text: string; tone?: 'ok' | 'warn'; action?: ToastAction } | null;
 
   setSource(src: string, opts?: { origin?: State['origin']; history?: 'push' | 'coalesce' | 'none' }): void;
   /** Show another page / layout of a deck (clears the selection and fits the view). */
@@ -132,7 +136,7 @@ export interface State extends Derived {
   setEditing(e: State['editing']): void;
   setHoverIssue(id: string | null): void;
   setFocusIssue(id: string | null): void;
-  notify(text: string, tone?: 'ok' | 'warn'): void;
+  notify(text: string, tone?: 'ok' | 'warn', action?: ToastAction): void;
   setWorkspace(w: Partial<Workspace>): void;
   setMultiSelect(v: boolean): void;
   setDocSheet(v: boolean): void;
@@ -312,8 +316,8 @@ export const useStore = create<State>((set, get) => ({
   setFocusIssue(focusIssue) {
     set({ focusIssue });
   },
-  notify(text, tone) {
-    set({ toast: { id: Date.now(), text, tone } });
+  notify(text, tone, action) {
+    set({ toast: { id: Date.now(), text, tone, action } });
   },
   setMultiSelect(multiSelect) {
     set({ multiSelect });
