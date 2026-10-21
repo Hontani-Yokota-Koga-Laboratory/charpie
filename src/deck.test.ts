@@ -215,10 +215,11 @@ describe('table / list', () => {
   });
   it('reads Markdown tables and nested lists', () => {
     const t = parseTable('| a | b |\n|:-:|--:|\n| 1 | 2 |\n| x \\| y | $a|b$ |', {});
-    expect(t).toEqual({ rows: [['a', 'b'], ['1', '2'], ['x | y', '$a|b$']], header: 1, align: ['c', 'r'] });
+    expect(t.rows.map((r) => r.cells.map((c) => c.text))).toEqual([['a', 'b'], ['1', '2'], ['x | y', '$a|b$']]);
+    expect([t.header, t.align]).toEqual([1, ['c', 'r']]);
     expect(parseList('- a\n  - b\n1. c\nmore').map((i) => [i.level, i.marker, i.text])).toEqual([
-      [0, '•', 'a'],
-      [1, '–', 'b'],
+      [0, '●', 'a'],
+      [1, '○', 'b'],
       [0, '1.', 'c'],
       [0, null, 'more'],
     ]);

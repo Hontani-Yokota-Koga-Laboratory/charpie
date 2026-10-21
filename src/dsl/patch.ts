@@ -387,11 +387,12 @@ export function addNodeLines(src: string, doc: Doc, lines: string[]): string {
 }
 
 /** Rewrite (or insert) the first `set` line with one key changed. */
-export function setSetting(src: string, doc: Doc, key: string, value: number | undefined): string {
+export function setSetting(src: string, doc: Doc, key: string, value: number | string | undefined): string {
   const attrs = { ...doc.settingsAttrs };
   if (value === undefined) delete attrs[key];
-  else attrs[key] = fmtNum(value);
-  const line = 'set ' + Object.entries(attrs).map(([k, v]) => `${k}=${v}`).join(' ');
+  else attrs[key] = typeof value === 'number' ? fmtNum(value) : value;
+  // family is a name (quoted when it has spaces); the rest are written as they are
+  const line = 'set ' + Object.entries(attrs).map(([k, v]) => `${k}=${k === 'family' ? fmtValue(v) : v}`).join(' ');
   if (doc.settingsSpan) {
     if (!Object.keys(attrs).length) return applyEdits(src, [{ ...doc.settingsSpan, insert: '# set' }]);
     return applyEdits(src, [{ ...doc.settingsSpan, insert: line }]);

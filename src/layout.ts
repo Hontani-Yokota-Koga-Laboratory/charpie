@@ -13,7 +13,7 @@ import {
   type ShapeOpts,
   type TrapDir,
 } from './geom/geom';
-import { fitText, richLines, wrap, LINE_HEIGHT, type FitResult, type Measure, type RichLine } from './text/fit';
+import { familyMeasure, fitText, richLines, wrap, LINE_HEIGHT, type FitResult, type Measure, type RichLine } from './text/fit';
 import { layoutList, layoutTable, parseList, parseTable, type BlockLayout } from './text/blocks';
 
 export interface NodeStyle {
@@ -24,6 +24,8 @@ export interface NodeStyle {
   dash: 'solid' | 'dashed' | 'dotted';
   font?: number;
   weight: number;
+  /** font family (`family=`, else `set family=`; undefined = the default) */
+  family?: string;
   opacity: number;
   skew: number;
   radius: number;
@@ -55,6 +57,7 @@ export interface EdgeStyle {
   /** label colour was set explicitly (otherwise the UI may theme it) */
   textExplicit: boolean;
   font: number;
+  family?: string;
   /** 0..1 position of the port along its side (fromat= / toat=) */
   fromAt?: number;
   toAt?: number;
@@ -168,6 +171,7 @@ export function nodeStyle(doc: Doc, n: NodeDef): NodeStyle {
     dash: dashOf(p.dash, 'solid'),
     font: font !== undefined && Number.isFinite(font) && font > 0 ? font : undefined,
     weight: p.weight === 'bold' ? 700 : p.weight === 'light' ? 400 : num(p.weight, NODE_DEFAULTS.weight),
+    family: familyOf(doc, p),
     opacity: num(p.opacity, 1),
     skew: num(p.skew, NODE_DEFAULTS.skew),
     radius: num(p.radius, NODE_DEFAULTS.radius),
@@ -179,6 +183,12 @@ export function nodeStyle(doc: Doc, n: NodeDef): NodeStyle {
     src: p.src || undefined,
     fit: p.fit === 'cover' || p.fit === 'fill' ? p.fit : 'contain',
   };
+}
+
+/** `family=` (shape / arrow / style) over `set family=`; `default` goes back to the built-in font. */
+function familyOf(doc: Doc, p: Record<string, string>): string | undefined {
+  const f = (p.family ?? doc.settings.family)?.trim();
+  return f && f !== 'default' ? f : undefined;
 }
 
 function rotationOf(v: string | undefined): TextRotation {
@@ -221,13 +231,15 @@ export function edgeStyle(doc: Doc, e: EdgeDef): EdgeStyle {
     text: p.text ?? EDGE_DEFAULTS.text,
     textExplicit: p.text !== undefined,
     font: num(p.font, EDGE_DEFAULTS.font),
+    family: familyOf(doc, p),
     fromAt: p.fromat !== undefined && Number.isFinite(Number(p.fromat)) ? Number(p.fromat) : undefined,
     toAt: p.toat !== undefined && Number.isFinite(Number(p.toat)) ? Number(p.toat) : undefined,
   };
 }
 
-export function layoutNode(doc: Doc, n: NodeDef, measure: Measure, geomOverride?: Box): NodeLayout {
+export function layoutNode(doc: Doc, n: NodeDef, measureAny: Measure, geomOverride?: Box): NodeLayout {
   const style = nodeStyle(doc, n);
+  const measure = familyMeasure(measureAny, style.family);
   const box = geomOverride ?? { x: n.x, y: n.y, w: n.w, h: n.h };
   const o: ShapeOpts = { skew: style.skew, radius: style.radius, dir: style.dir };
   const tb = textBox(n.kind, box, o, style.pad ?? doc.settings.padding);
@@ -265,14 +277,27 @@ export function layoutNode(doc: Doc, n: NodeDef, measure: Measure, geomOverride?
   };
 }
 
+const positive = (v: string | undefined) => (v !== undefined && Number(v) > 0 ? Number(v) : undefined);
+const nonNegative = (v: string | undefined) => (v !== undefined && v !== '' && Number(v) >= 0 ? Number(v) : undefined);
+
 /** table / list: the body fitted into the text area at one font size. */
 function layoutBlockNode(doc: Doc, n: NodeDef, measure: Measure, box: Box, tb: Box, style: NodeStyle, o: ShapeOpts): NodeLayout {
   const body = n.body?.text ?? '';
-  const opts = { fixed: style.font, min: doc.settings.fontmin, max: doc.settings.fontmax, weight: style.weight, measure };
   const p = mergedProps(doc, n.classes, n.attrs);
+  // a block hugs the top-left unless placed explicitly
+  const opts = {
+    fixed: style.font,
+    min: doc.settings.fontmin,
+    max: doc.settings.fontmax,
+    weight: style.weight,
+    measure,
+    valign: p.valign ? style.valign : undefined,
+    halign: p.halign ? style.halign : undefined,
+    lineheight: positive(p.lineheight),
+  };
   const blocks =
     n.kind === 'table'
-      ? layoutTable(parseTable(body, p), tb, {
+      ? layoutTable(parseTable(body, p, (c) => doc.styles.get(c)?.props), tb, {
           ...opts,
           cols: p.cols
             ?.split(',')
@@ -280,7 +305,16 @@ function layoutBlockNode(doc: Doc, n: NodeDef, measure: Measure, box: Box, tb: B
             .filter((x) => x > 0),
           rules: p.rules === 'grid' || p.rules === 'none' ? p.rules : 'booktabs',
         })
-      : layoutList(parseList(body), tb, opts);
+      : layoutList(parseList(body), tb, {
+          ...opts,
+          levelscale: p.levelscale
+            ?.split(',')
+            .map(Number)
+            .filter((x) => x > 0),
+          itemgap: nonNegative(p.itemgap),
+          indent: nonNegative(p.indent),
+          markgap: nonNegative(p.markgap),
+        });
   const parents = ancestors(doc, n.id);
   return {
     id: n.id,
@@ -290,7 +324,7 @@ function layoutBlockNode(doc: Doc, n: NodeDef, measure: Measure, box: Box, tb: B
     poly: outline(n.kind, box, o),
     path: shapePath(n.kind, box, o),
     textBox: tb,
-    textRect: { x: tb.x, y: tb.y, w: blocks.width, h: blocks.height },
+    textRect: { x: blocks.x, y: blocks.y, w: blocks.width, h: blocks.height },
     style,
     text: { size: blocks.size, lines: [], width: blocks.width, height: blocks.height, overflow: blocks.overflow, auto: style.font === undefined },
     blocks,
@@ -303,8 +337,9 @@ function layoutBlockNode(doc: Doc, n: NodeDef, measure: Measure, box: Box, tb: B
  * Smallest box (whole px) that still holds the label as written — explicit line breaks only — at the
  * node's current font size. Uses the same tolerances as fitText, so one pixel less no longer fits.
  */
-export function fitSize(doc: Doc, l: NodeLayout, measure: Measure): { w: number; h: number } {
+export function fitSize(doc: Doc, l: NodeLayout, measureAny: Measure): { w: number; h: number } {
   const { style, kind } = l;
+  const measure = familyMeasure(measureAny, style.family);
   if (l.blocks) {
     // table / list: the content's extent at the current size (lists reflow, so this is a lower bound)
     const pad = style.pad ?? doc.settings.padding;
@@ -449,8 +484,9 @@ function trimEnds(pts: Pt[], start: number, end: number): Pt[] {
   return out;
 }
 
-export function layoutEdge(doc: Doc, e: EdgeDef, a: EdgeEnd, b: EdgeEnd, measure: Measure, free: EdgeLayout['free'] = {}): EdgeLayout {
+export function layoutEdge(doc: Doc, e: EdgeDef, a: EdgeEnd, b: EdgeEnd, measureAny: Measure, free: EdgeLayout['free'] = {}): EdgeLayout {
   const style = edgeStyle(doc, e);
+  const measure = familyMeasure(measureAny, style.family);
   const ca = center(endBox(a)),
     cb = center(endBox(b));
   let pts: Pt[];
@@ -628,6 +664,9 @@ function layoutEmbed(n: NodeLayout, measure: Measure): Embed | undefined {
   embedDepth++;
   try {
     const layout = computeLayout(parse(found.text, page ? { page } : undefined), measure);
+    // its pictures are relative to it: make them relative to the file that embeds it
+    const dir = file.includes('/') ? file.slice(0, file.lastIndexOf('/')) : '';
+    if (dir) rebaseImages(layout, dir);
     const view = layout.frame ?? boundsOf(layout);
     const b = n.box;
     const sx = b.w / Math.max(1, view.w),
@@ -637,6 +676,26 @@ function layoutEmbed(n: NodeLayout, measure: Measure): Embed | undefined {
   } finally {
     embedDepth--;
     embedBase = prev;
+  }
+}
+
+/** `dir/src` with `.` / `..` resolved (relative paths only; URLs and absolute paths stay). */
+function joinPath(dir: string, src: string): string {
+  if (/^(https?:|data:|\/)/.test(src)) return src;
+  const parts: string[] = [];
+  for (const p of `${dir}/${src}`.split('/')) {
+    if (p === '..' && parts.length && parts[parts.length - 1] !== '..') parts.pop();
+    else if (p && p !== '.') parts.push(p);
+  }
+  return parts.join('/');
+}
+
+/** Prefix the `src=` of pictures (also in nested embeds) with `dir`. */
+function rebaseImages(layout: Layout, dir: string) {
+  for (const n of layout.nodes) {
+    if (n.kind !== 'image') continue;
+    if (n.embed) rebaseImages(n.embed.layout, dir);
+    else if (n.style.src && !isDiagramSrc(n.style.src)) n.style = { ...n.style, src: joinPath(dir, n.style.src) };
   }
 }
 

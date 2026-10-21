@@ -17,6 +17,8 @@ GET  /api/selection                     what the user has selected in the browse
 GET  /api/export?file=NAME&format=svg   or format=tikz (svg embeds the pictures of image shapes)
                                         decks: one page (&page=ID); format=tikz&all=1 = every page as one LaTeX document
 GET  /api/asset?file=NAME&src=PATH      a picture referenced by an image shape (src relative to the .charpie)
+GET  /api/fonts?file=NAME&family=F      @font-face CSS for family= fonts ({"css","missing"}); files at /api/font/<id>
+GET  /api/fonts/list?file=NAME          family names family= can use ({"families"}: fonts/ next to the file + installed @fontsource packages)
 \`file\` may be omitted: defaults to the file open in the browser (or the only file).
 Decks (files with page / layout blocks): add \`&page=ID\` or \`&layout=NAME\` to doc / measure / export / ops
 (default: the first page). /api/issues checks every page and layout; each issue has "view": "page ID".
@@ -60,8 +62,8 @@ After writing, check "errors" — fix overlaps/overflow with {"op":"fix"} or by 
 
 ## .charpie syntax (cheat sheet)
   # comment
-  set gap=12 grid=10 padding=8 fontmin=9 fontmax=18
-  style accent { fill: #eef2ff; stroke: #6366f1; text: #312e81; }
+  set gap=12 grid=10 padding=8 fontmin=9 fontmax=18 family="M PLUS 1p"
+  style accent { fill: #eef2ff; stroke: #6366f1; text: #312e81; family: M PLUS Rounded 1c; }
   rect   api "API Gateway" at (120, 80) size 160x60 .accent
   round  grp "Group" at (0, 0) size 400x300 valign=top
   rect   c1  "Child" at (20, 40) size 100x50 in=grp
@@ -70,28 +72,46 @@ After writing, check "errors" — fix overlaps/overflow with {"op":"fix"} or by 
   api -> (400, 120) "out"        # an end can be a point: (x, y), or +(dx, dy) relative to the other end
   (0, 50) -> api                 #   (relative = from the other end's port, else its centre)
   rect m "Step $\\theta_{k+1} = \\theta_k - \\eta\\nabla f$" ...   # $...$ = inline TeX (MathJax); write backslashes once; \\$ = a literal $
+  rect b "構造を**テキストで指定**する" ...   # **...** = bold span (labels, arrow labels, table cells, list items; wraps
+                                             #   across lines; an unpaired ** is plain text; inside $...$ it is TeX)
   kinds: rect round ellipse diamond trap para hex cross plus text image   (cross = ⊗, plus = ⊕; aliases otimes / oplus)
   image p "alt text" at (0, 0) size 160x120 src="assets/patch.png" fit=cover
               # src = path relative to the .charpie file (or a URL); fit = contain (default) | cover | fill
               # the label is alt text only (not drawn); no frame unless stroke= is given
-  node attrs: fill stroke text lw dash(solid|dashed|dotted) font(auto|px) weight(bold|light)
+  family = font family: set family=… (whole file) → style family: … → family=… on a shape / arrow;
+              family=default = the built-in font (Inter + Japanese fallback). Text is drawn and measured as written
+              (no ligatures: "->" stays two characters). Found in: fonts/ next to the .charpie (.ttf/.otf/.woff2,
+              the name inside the file), else an installed npm package @fontsource/<kebab-name>
+              (bundled: "M PLUS Rounded 1c", "M PLUS 1p"). Missing → check warns (font) and the default is used.
+              Browser, PNG/PDF export and check/measure use the same files; SVG export embeds the needed subsets;
+              TikZ selects it with luatexja-fontspec (the font must be installed for lualatex).
+  node attrs: fill stroke text lw dash(solid|dashed|dotted) font(auto|px) family weight(bold|light)
               valign(top|middle|bottom) in(parent id) overlap=allow skew radius opacity
               dir(up|down|left|right: short side of a trap) pad(text padding, overrides set padding)
               halign(left|center|right) rotate(90|-90|180: turn the label; the shape stays upright)
-  edge attrs: route bend stroke lw dash text font fromat toat (0..1: slide a port along its side)
+  edge attrs: route bend stroke lw dash text font family fromat toat (0..1: slide a port along its side)
   ignore=all | ignore=overlap,through,...   (shapes, arrows and styles) silence checks that involve this item;
-              names: overlap gap text contain covered through label loop tex page
+              names: overlap gap text contain covered through label loop tex page font
   x,y = top-left corner, y grows downward. Text auto-shrinks to fit (fontmin..fontmax).
 
   table t at (80, 160) size 700x220 align=l,r,r {      # Markdown rows; |---| marks the header (and :--: alignment)
     | Method | Acc (%) | Params |                       # cols=2,1,1 relative widths · header=N · rules=booktabs|grid|none
-    |--------|--------:|-------:|                       # **cell** = bold cell; $...$ works in cells
-    | Ours   | 82.1    | 22M    |
+    |--------|--------:|-------:|                       # **bold** (whole cell or part); $...$ works in cells
+    | **VOLTA input** | crop 2x bbox {.note} || {.sec} # || = the cell before spans one more column (MultiMarkdown)
+    | Ours   | 82.1    | 22M    | {indent=1}           # {…} after a cell: that cell; after the last |: the row
+  }                                                     # keys: fill text(colour) weight(bold|normal|light) scale(0.85 =
+                                                        #   smaller text) indent(em) align(l|c|r) .style (a style's
+                                                        #   fill/text/weight/scale/indent/align). Row: fill paints the
+                                                        #   row, indent indents its first cell, the rest apply to every cell
+  list l at (40, 140) size 600x400 levelscale=1,1,0.85 {   # - / * / 1. items, nest with 2 more spaces;
+    - first **bold part**                               # bullets ● ○ ■ by level (repeating); one font size fitted to
+      - nested                                          #   the box; levelscale = relative size per level (default 1,0.9)
   }
-  list l at (40, 140) size 600x400 {                    # - / * / 1. items, nest with 2 more spaces;
-    - first                                             # **whole item** = bold; one font size fitted to the box
-      - nested
-  }
+  list spacing (em of the fitted size): lineheight=1.8 (line pitch, also between wrapped lines; default 1.25)
+              itemgap=0 (extra space between items; default 0.55 / 0.3 nested) indent=2 (per level; default 1.5)
+              markgap=1.3 (bullet's left edge to the text; default 1.1). table: lineheight= too.
+  table / list: valign=top|middle|bottom and halign=left|center|right place the content in the box
+              (without valign a table stretches its rows to the box height; a list sits at the top-left)
   image fig at (0, 0) size 600x300 src="other.charpie#page"   # another diagram drawn inline (fit=contain|cover)
 
 ## Slides: decks

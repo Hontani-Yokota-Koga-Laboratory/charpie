@@ -4,7 +4,7 @@ import { boxContains, boxesIntersect, clipPoly, outline, polyBox, polySeparation
 import type { Layout, NodeLayout } from '../layout';
 import { renderMath, splitMath } from '../text/math';
 
-export type IssueCode = 'text-covered' | 'overlap' | 'too-close' | 'text-overflow' | 'containment' | 'edge-through' | 'label-overlap' | 'self-loop' | 'tex' | 'off-page';
+export type IssueCode = 'text-covered' | 'overlap' | 'too-close' | 'text-overflow' | 'containment' | 'edge-through' | 'label-overlap' | 'self-loop' | 'tex' | 'off-page' | 'font';
 
 export interface Issue {
   id: string;
@@ -31,7 +31,18 @@ export const IGNORE_NAME: Record<IssueCode, string> = {
   'text-covered': 'covered',
   tex: 'tex',
   'off-page': 'page',
+  font: 'font',
 };
+
+/**
+ * Whether a `family=` can be drawn with its own font files (set by whoever serves the fonts:
+ * the server's ./fonts + Fontsource lookup, or the browser from the server's answer).
+ * `undefined` = not known here: no warning.
+ */
+let fontLookup: ((family: string) => boolean | undefined) | undefined;
+export function setFontLookup(f: typeof fontLookup) {
+  fontLookup = f;
+}
 
 const ignoreSet = (v: string | undefined): Set<string> => new Set((v ?? '').split(',').map((x) => x.trim()).filter(Boolean));
 
@@ -69,6 +80,7 @@ export const ISSUE_LABEL: Record<IssueCode, string> = {
   'text-covered': '文字が子に隠れる',
   tex: 'TeX エラー',
   'off-page': 'ページ外',
+  font: 'フォントなし',
 };
 
 const allowsOverlap = (n: NodeLayout) => n.def.attrs.overlap === 'allow' || n.def.attrs.overlap === 'true';
@@ -105,6 +117,21 @@ export function checkAll(doc: Doc, layout: Layout): Issue[] {
   for (const e of layout.edges)
     for (const [k, m] of texErrors(e.def.label).entries())
       issues.push({ id: `tex:${e.key}#${k}`, code: 'tex', severity: 'warning', message: `矢印「${e.key}」の数式を組めません — ${m}`, nodes: [], edges: [e.key] });
+
+  // 1a'. a family= whose font files are not available (drawn in the default font)
+  if (fontLookup) {
+    const users = new Map<string, { nodes: string[]; edges: string[] }>();
+    const use = (f: string | undefined, kind: 'nodes' | 'edges', id: string) => {
+      if (!f) return;
+      if (!users.has(f)) users.set(f, { nodes: [], edges: [] });
+      users.get(f)![kind].push(id);
+    };
+    for (const n of nodes) if (n.kind !== 'image' && (n.def.label || n.blocks)) use(n.style.family, 'nodes', n.id);
+    for (const e of layout.edges) if (e.def.label) use(e.style.family, 'edges', e.key);
+    for (const [f, u] of users)
+      if (fontLookup(f) === false)
+        issues.push({ id: `font:${f}`, code: 'font', severity: 'warning', message: `フォント "${f}" が見つかりません（既定のフォントで描きます。fonts/ に置くか npm i @fontsource/<名前>）`, ...u });
+  }
 
   // 1b. a container's own text must not be covered by its children
   for (const p of nodes) {

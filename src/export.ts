@@ -2,12 +2,16 @@ import { diagramBounds } from './components/Diagram';
 import type { Layout } from './layout';
 import { exportSvg } from './exportFormats';
 import { embeddedImages } from './images';
+import { fontCssFor } from './fonts';
 
 export { exportSvg, exportTikz, exportTikzDeck } from './exportFormats';
 
 /** SVG with the pictures of image shapes embedded, so the file stands alone. */
 export async function exportSvgStandalone(layout: Layout, bg: string | null = '#ffffff'): Promise<string> {
-  return exportSvg(layout, bg, await embeddedImages(layout));
+  const svg = exportSvg(layout, bg, await embeddedImages(layout));
+  // family= fonts travel inside the file (an SVG drawn as an image cannot load them)
+  const css = await fontCssFor(svg);
+  return css ? svg.replace(/<svg\b[^>]*>/, (open) => `${open}<style>${css}</style>`) : svg;
 }
 
 export async function exportPng(layout: Layout, scale = 2, bg = '#ffffff'): Promise<Blob> {

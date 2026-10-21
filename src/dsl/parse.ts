@@ -143,11 +143,13 @@ export function tokenize(src: string): Tok[] {
 
 // ───────────────────────────── parser ─────────────────────────────
 
-export const NODE_ATTRS = new Set(['fill', 'stroke', 'text', 'lw', 'dash', 'font', 'weight', 'in', 'overlap', 'skew', 'radius', 'opacity', 'valign', 'halign', 'dir', 'pad', 'rotate', 'src', 'fit', 'ignore', 'header', 'align', 'cols', 'rules']);
-export const EDGE_ATTRS = new Set(['stroke', 'lw', 'dash', 'route', 'bend', 'text', 'font', 'fromat', 'toat', 'ignore']);
+export const NODE_ATTRS = new Set(['fill', 'stroke', 'text', 'lw', 'dash', 'font', 'family', 'weight', 'in', 'overlap', 'skew', 'radius', 'opacity', 'valign', 'halign', 'dir', 'pad', 'rotate', 'src', 'fit', 'ignore', 'header', 'align', 'cols', 'rules', 'levelscale', 'lineheight', 'itemgap', 'indent', 'markgap']);
+export const EDGE_ATTRS = new Set(['stroke', 'lw', 'dash', 'route', 'bend', 'text', 'font', 'family', 'fromat', 'toat', 'ignore']);
+/** Keys of table cell / row `{...}` blocks (also valid in a `style` used there). */
+export const CELL_ATTRS = new Set(['fill', 'text', 'weight', 'scale', 'indent', 'align']);
 
 /** Attributes whose value may be a comma-separated list: `ignore=overlap,through`, `cols=2,1,1`. */
-const LIST_ATTRS = new Set(['ignore', 'align', 'cols']);
+const LIST_ATTRS = new Set(['ignore', 'align', 'cols', 'levelscale']);
 
 type ParsedEnd = { id: string; port?: string; portTok?: Tok; pt?: EndPoint; span: Span; next: number };
 
@@ -167,7 +169,7 @@ function parseEnd(ts: Tok[], i: number): ParsedEnd | undefined {
   }
   return undefined;
 }
-const SETTINGS_KEYS = new Set<string>(['gap', 'grid', 'padding', 'fontmin', 'fontmax', 'canvas']);
+const SETTINGS_KEYS = new Set<string>(['gap', 'grid', 'padding', 'fontmin', 'fontmax', 'canvas', 'family']);
 
 const KIND_ALIASES: Record<string, ShapeKind> = {
   rectangle: 'rect',
@@ -564,9 +566,12 @@ function parseFile(src: string): Parsed {
       while (i < ts.length && !isPunct(ts[i], '}')) {
         const k = ts[i];
         if (k.type === 'ident' && isPunct(ts[i + 1], ':') && ts[i + 2]) {
-          if (!NODE_ATTRS.has(k.value) && !EDGE_ATTRS.has(k.value)) err(k, `不明な属性 "${k.value}"`, 'unknown-attr', 'warning');
-          props[k.value] = ts[i + 2].value;
-          i += 3;
+          if (!NODE_ATTRS.has(k.value) && !EDGE_ATTRS.has(k.value) && !CELL_ATTRS.has(k.value)) err(k, `不明な属性 "${k.value}"`, 'unknown-attr', 'warning');
+          // the value runs to `;` / `}` (so `family: M PLUS 1p;` needs no quotes)
+          let j = i + 2;
+          while (j + 1 < ts.length && !isPunct(ts[j + 1], ';') && !isPunct(ts[j + 1], '}') && !(ts[j + 1].type === 'ident' && isPunct(ts[j + 2], ':'))) j++;
+          props[k.value] = j === i + 2 ? ts[i + 2].value : src.slice(ts[i + 2].from, ts[j].to).trim();
+          i = j + 1;
         } else if (isPunct(k, ';') || isPunct(k, ',')) {
           i++;
         } else {
@@ -584,6 +589,11 @@ function parseFile(src: string): Parsed {
       const out = newOut();
       parseTail(ts, 1, SETTINGS_KEYS as Set<string>, out);
       for (const [k, v] of Object.entries(out.attrs)) {
+        if (k === 'family') {
+          settings.family = v;
+          settingsAttrs[k] = v;
+          continue;
+        }
         if (k === 'canvas') {
           const m = /^(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)$/.exec(v);
           if (m) {
@@ -594,7 +604,7 @@ function parseFile(src: string): Parsed {
         }
         const num = Number(v);
         if (SETTINGS_KEYS.has(k as keyof Settings) && Number.isFinite(num)) {
-          settings[k as keyof Settings] = num;
+          (settings as unknown as Record<string, number>)[k] = num;
           settingsAttrs[k] = v;
         }
       }

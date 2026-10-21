@@ -74,3 +74,36 @@ describe('image export', () => {
     expect(tex).toContain('graphicx');
   });
 });
+
+import { embedFonts, findFamily, matchWeight } from './fonts';
+import { issuesAll as issuesOf } from './core';
+
+describe('font families', () => {
+  it('finds bundled Fontsource families and measures with their own glyphs', () => {
+    const faces = findFamily('M PLUS Rounded 1c');
+    expect(faces?.some((f) => f.weight === 700 && f.ranges)).toBe(true);
+    expect(findFamily('m plus 1p')).toBeTruthy();
+    expect(findFamily('No Such Font 9')).toBeUndefined();
+    const inter = fontMeasure('Hello', 500);
+    const rounded = fontMeasure('Hello', 500, 'M PLUS Rounded 1c');
+    expect(rounded).toBeGreaterThan(0);
+    expect(rounded).not.toBeCloseTo(inter, 1);
+    // its own kana (not the 100-per-char fallback)
+    expect(fontMeasure('あいう', 700, 'M PLUS Rounded 1c')).toBeGreaterThan(200);
+  });
+  it('measures text as written: no ligatures / contextual arrows', () => {
+    expect(fontMeasure('->', 400)).toBeCloseTo(fontMeasure('-', 400) + fontMeasure('>', 400), 0);
+  });
+  it('picks weights like CSS', () => {
+    expect(matchWeight(500, [400, 700])).toBe(400);
+    expect(matchWeight(600, [400, 700])).toBe(700);
+    expect(matchWeight(300, [400, 700])).toBe(400);
+  });
+  it('warns about a family it cannot find, and embeds the ones it can', () => {
+    const issues = issuesOf('rect a "x" at (0, 0) size 100x50 family="No Such Font 9"\nrect b "y" at (200, 0) size 100x50 family="M PLUS 1p"\n', fontMeasure).issues;
+    expect(issues.filter((i) => i.code === 'font').map((i) => i.message)).toEqual([expect.stringContaining('No Such Font 9')]);
+    const svg = embedFonts(`<svg xmlns="http://www.w3.org/2000/svg"><text font-family="&#x27;M PLUS 1p&#x27;, Inter" font-weight="500">あ</text><text font-family="&#x27;Inter Variable&#x27;, x">b</text></svg>`);
+    expect(svg).toMatch(/<style>@font-face\{font-family:'M PLUS 1p';[^}]*font-weight:500;[^}]*src:url\(data:font\/woff2;base64,/);
+    expect(svg.match(/@font-face/g)!.length).toBeLessThan(4);
+  });
+});

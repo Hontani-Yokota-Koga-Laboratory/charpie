@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef } from 'react';
 import { removeItems, setEdgeLabel, setNodeBody, setNodeLabel } from '../dsl/patch';
 import { useStore } from '../store';
-import { FONT_FAMILY, LINE_HEIGHT } from '../text/fit';
+import { LINE_HEIGHT, fontStack } from '../text/fit';
 
 /** In-place editing: a label, or the `{ ... }` lines of a table / list. */
 export function InlineEditor() {
@@ -154,6 +154,7 @@ function LabelEditor() {
   let fontSize: number;
   let color = '#0f172a';
   let weight = 500;
+  let family: string | undefined;
   if (node) {
     const tb = node.textBox;
     // rotated labels are edited horizontally, centred on the text area
@@ -164,11 +165,13 @@ function LabelEditor() {
     fontSize = node.text.size * z;
     color = node.style.text;
     weight = node.style.weight;
+    family = node.style.family;
   } else {
     const c = edge!.label?.center ?? edge!.pts[Math.floor(edge!.pts.length / 2)];
     const w = 240 * z;
     rect = { x: view.x + c.x * z - w / 2, y: view.y + c.y * z - 30 * z, w, h: 60 * z };
     fontSize = edge!.style.font * z;
+    family = edge!.style.family;
   }
 
   return (
@@ -178,7 +181,7 @@ function LabelEditor() {
         contentEditable
         suppressContentEditableWarning
         spellCheck={false}
-        style={{ fontSize, fontFamily: FONT_FAMILY, lineHeight: LINE_HEIGHT, color, fontWeight: weight }}
+        style={{ fontSize, fontFamily: fontStack(family), lineHeight: LINE_HEIGHT, color, fontWeight: weight }}
         onKeyDown={(e) => {
           e.stopPropagation();
           if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {

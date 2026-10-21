@@ -1,3 +1,4 @@
+import { ensureFonts } from './fonts';
 import { useEffect, useRef, useState } from 'react';
 import { Canvas } from './components/Canvas';
 import { CodePanel } from './components/CodePanel';
@@ -162,6 +163,11 @@ export function App() {
   useEffect(() => {
     initEmbeds();
     initRemote();
+    // family= fonts: load what the current diagram uses (and re-measure once it is there)
+    void ensureFonts(useStore.getState().layout);
+    return useStore.subscribe((st, prev) => {
+      if (st.layout !== prev.layout || st.workspace.file !== prev.workspace.file) void ensureFonts(st.layout);
+    });
   }, []);
 
   // re-measure text once web fonts are ready (canvas metrics depend on them)

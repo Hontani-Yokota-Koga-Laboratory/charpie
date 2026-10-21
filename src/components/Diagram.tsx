@@ -1,6 +1,8 @@
 import { createContext, memo, useContext, useId } from 'react';
 import { arrowHeadPath, isDiagramSrc, lineAnchor, type EdgeLayout, type Layout, type NodeLayout } from '../layout';
-import { LINE_HEIGHT, FONT_FAMILY, inkCenter, type RichLine } from '../text/fit';
+import { LINE_HEIGHT, FONT_FAMILY, boldWeight, fontStack, inkCenter, type RichLine } from '../text/fit';
+import { plainText } from '../text/inline';
+import type { Mark } from '../text/blocks';
 import type { CSSProperties } from 'react';
 
 /**
@@ -34,10 +36,14 @@ function NodeImage({ n, interactive }: { n: NodeLayout; interactive?: boolean })
   return <image href={href} x={x} y={y} width={w} height={h} preserveAspectRatio={PRESERVE[n.style.fit]} style={{ pointerEvents: 'none' }} />;
 }
 
-const unescapeDollar = (l: string) => (l.includes('\\$') ? l.replace(/\\\$/g, '$') : l);
+/**
+ * Text is drawn as written: no ligatures / contextual alternates (Inter would turn `->` into an arrow).
+ * Measurement (canvas and fontkit) is done the same way.
+ */
+export const TEXT_FEATURES: CSSProperties = { fontVariantLigatures: 'none', fontFeatureSettings: '"calt" 0, "liga" 0' };
 
-/** Lines of a label with `$...$` formulas: text runs as <text>, formulas as MathJax SVG on the same baseline. */
-function RichText({ lines, rich, ax, anchor, baseline, size, weight, fill, style }: {
+/** Lines of a label with `$...$` formulas or `**bold**` spans: text runs as <text>, formulas as MathJax SVG on the same baseline. */
+function RichText({ lines, rich, ax, anchor, baseline, size, weight, family, fill, style }: {
   lines: string[];
   rich: (RichLine | null)[];
   ax: number;
@@ -45,17 +51,19 @@ function RichText({ lines, rich, ax, anchor, baseline, size, weight, fill, style
   baseline: (i: number, line: string) => number;
   size: number;
   weight: number;
+  family?: string;
   fill: string | undefined;
   style?: CSSProperties;
 }) {
+  const ff = fontStack(family);
   const ta = anchor === 'left' ? 'start' : anchor === 'right' ? 'end' : 'middle';
   return (
     <>
       {lines.map((l, i) => {
         const r = rich[i];
-        const text = r ? r.runs.map((x) => (x.math ? '' : x.s)).join('') : unescapeDollar(l);
+        const text = r ? r.runs.map((x) => (x.math ? '' : x.s)).join('') : plainText(l);
         const y = baseline(i, text);
-        if (!r) return <text key={i} x={ax} y={y} fontSize={size} fontWeight={weight} fill={fill} style={style} textAnchor={ta} fontFamily={FONT_FAMILY}>{text || ' '}</text>;
+        if (!r) return <text key={i} x={ax} y={y} fontSize={size} fontWeight={weight} fill={fill} style={style} textAnchor={ta} fontFamily={ff} xmlSpace="preserve">{text || ' '}</text>;
         const x0 = anchor === 'left' ? ax : anchor === 'right' ? ax - r.width : ax - r.width / 2;
         return (
           <g key={i}>
@@ -74,7 +82,7 @@ function RichText({ lines, rich, ax, anchor, baseline, size, weight, fill, style
                   dangerouslySetInnerHTML={{ __html: run.box.svg }}
                 />
               ) : (
-                <text key={j} x={x0 + run.x} y={y} fontSize={size} fontWeight={weight} fill={fill} style={style} textAnchor="start" fontFamily={FONT_FAMILY} xmlSpace="preserve">
+                <text key={j} x={x0 + run.x} y={y} fontSize={size} fontWeight={run.bold ? boldWeight(weight) : weight} fill={fill} style={style} textAnchor="start" fontFamily={ff} xmlSpace="preserve">
                   {run.s}
                 </text>
               ),
@@ -112,7 +120,7 @@ export function NodeText({ n, hidden }: { n: NodeLayout; hidden?: boolean }) {
   if (n.rich)
     return (
       <g transform={transform} style={{ pointerEvents: 'none' }}>
-        <RichText lines={lines} rich={n.rich} ax={ax} anchor={h} size={size} weight={n.style.weight} fill={n.style.text} baseline={(i, t) => top + lh * (i + 0.5) + inkCenter(t, n.style.weight) * size} />
+        <RichText lines={lines} rich={n.rich} ax={ax} anchor={h} size={size} weight={n.style.weight} family={n.style.family} fill={n.style.text} baseline={(i, t) => top + lh * (i + 0.5) + inkCenter(t, n.style.weight, n.style.family) * size} />
       </g>
     );
   return (
@@ -122,13 +130,13 @@ export function NodeText({ n, hidden }: { n: NodeLayout; hidden?: boolean }) {
       fontWeight={n.style.weight}
       fill={n.style.text}
       textAnchor={h === 'left' ? 'start' : h === 'right' ? 'end' : 'middle'}
-      fontFamily={FONT_FAMILY}
+      fontFamily={fontStack(n.style.family)}
       transform={transform}
       style={{ pointerEvents: 'none' }}
     >
       {lines.map((l, i) => (
-        <tspan key={i} x={ax} y={top + lh * (i + 0.5) + inkCenter(l, n.style.weight) * size}>
-          {unescapeDollar(l) || ' '}
+        <tspan key={i} x={ax} y={top + lh * (i + 0.5) + inkCenter(l, n.style.weight, n.style.family) * size}>
+          {plainText(l) || ' '}
         </tspan>
       ))}
     </text>
@@ -183,25 +191,38 @@ function EmbeddedDiagram({ n }: { n: NodeLayout }) {
   );
 }
 
-/** table / list content: positioned text pieces and (table) rules. */
+function MarkShape({ m, color }: { m: Mark; color: string }) {
+  if (m.kind === 'square') return <rect x={m.cx - m.r} y={m.cy - m.r} width={m.r * 2} height={m.r * 2} fill={color} />;
+  if (m.kind === 'circle') return <circle cx={m.cx} cy={m.cy} r={m.r * 0.86} fill="none" stroke={color} strokeWidth={m.r * 0.28} />;
+  return <circle cx={m.cx} cy={m.cy} r={m.r} fill={color} />;
+}
+
+/** table / list content: row / cell backgrounds, positioned text pieces, bullets and (table) rules. */
 function BlockContent({ n, hidden }: { n: NodeLayout; hidden?: boolean }) {
   const b = n.blocks!;
   if (hidden) return null;
   const color = n.style.text;
+  const fam = n.style.family;
   return (
     <g style={{ pointerEvents: 'none' }}>
+      {b.fills.map((f, i) => (
+        <rect key={'f' + i} x={f.x} y={f.y} width={f.w} height={f.h} fill={f.fill} />
+      ))}
+      {b.marks.map((m, i) => (
+        <MarkShape key={'m' + i} m={m} color={color} />
+      ))}
       {b.rules.map((r, i) => (
         <line key={'r' + i} x1={r.x1} y1={r.y1} x2={r.x2} y2={r.y2} stroke={n.style.stroke === 'none' ? color : n.style.stroke} strokeWidth={r.lw} />
       ))}
       {b.pieces.map((p, i) => {
-        const lh = p.size * LINE_HEIGHT;
-        const baseline = (k: number, t: string) => p.y + lh * (k + 0.5) + inkCenter(t, p.weight) * p.size;
-        if (p.rich) return <RichText key={i} lines={p.lines} rich={p.rich} ax={p.x} anchor={p.anchor} size={p.size} weight={p.weight} fill={color} baseline={baseline} />;
+        const lh = p.size * (p.lh ?? LINE_HEIGHT);
+        const baseline = (k: number, t: string) => p.y + lh * (k + 0.5) + inkCenter(t, p.weight, fam) * p.size;
+        if (p.rich) return <RichText key={i} lines={p.lines} rich={p.rich} ax={p.x} anchor={p.anchor} size={p.size} weight={p.weight} family={fam} fill={p.color ?? color} baseline={baseline} />;
         return (
-          <text key={i} fontSize={p.size} fontWeight={p.weight} fill={color} textAnchor={p.anchor === 'left' ? 'start' : p.anchor === 'right' ? 'end' : 'middle'} fontFamily={FONT_FAMILY}>
+          <text key={i} fontSize={p.size} fontWeight={p.weight} fill={p.color ?? color} textAnchor={p.anchor === 'left' ? 'start' : p.anchor === 'right' ? 'end' : 'middle'} fontFamily={fontStack(fam)}>
             {p.lines.map((l, k) => (
               <tspan key={k} x={p.x} y={baseline(k, l)}>
-                {unescapeDollar(l) || ' '}
+                {plainText(l) || ' '}
               </tspan>
             ))}
           </text>
@@ -249,9 +270,10 @@ export function EdgeLabel({ e, bg, interactive }: { e: EdgeLayout; bg: string; i
             anchor="center"
             size={size}
             weight={500}
+            family={e.style.family}
             fill={undefined}
             style={{ fill: interactive && !e.style.textExplicit ? 'var(--text-2)' : e.style.text }}
-            baseline={(i, t) => box.y + 3 + lh * (i + 0.5) + inkCenter(t, 500) * size}
+            baseline={(i, t) => box.y + 3 + lh * (i + 0.5) + inkCenter(t, 500, e.style.family) * size}
           />
         </g>
       ) : (
@@ -260,11 +282,11 @@ export function EdgeLabel({ e, bg, interactive }: { e: EdgeLayout; bg: string; i
           fontWeight={500}
           style={{ pointerEvents: 'none', fill: interactive && !e.style.textExplicit ? 'var(--text-2)' : e.style.text }}
           textAnchor="middle"
-          fontFamily={FONT_FAMILY}
+          fontFamily={fontStack(e.style.family)}
         >
           {lines.map((l, i) => (
-            <tspan key={i} x={box.x + box.w / 2} y={box.y + 3 + lh * (i + 0.5) + inkCenter(l, 500) * size}>
-              {unescapeDollar(l)}
+            <tspan key={i} x={box.x + box.w / 2} y={box.y + 3 + lh * (i + 0.5) + inkCenter(l, 500, e.style.family) * size}>
+              {plainText(l)}
             </tspan>
           ))}
         </text>
@@ -282,7 +304,7 @@ export function DiagramSvg({ layout, bg, padding = 24, images }: { layout: Layou
     w = b.w + pad * 2,
     h = b.h + pad * 2;
   const svg = (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox={`${x} ${y} ${w} ${h}`} width={w} height={h} fontFamily={FONT_FAMILY}>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox={`${x} ${y} ${w} ${h}`} width={w} height={h} fontFamily={FONT_FAMILY} style={TEXT_FEATURES}>
       {bg && <rect x={x} y={y} width={w} height={h} fill={bg} />}
       {layout.nodes.map((n) => (
         <NodeShape key={n.id} n={n} />

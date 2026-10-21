@@ -1,13 +1,16 @@
 /**
- * Server-side text measurement with the same Inter metrics the browser uses,
- * so `charpie check` and the canvas agree on what fits.
+ * Server-side text measurement with the same font files the browser uses (Inter, or the
+ * `family=` from ./fonts), so `charpie check` and the canvas agree on what fits.
+ * Like the drawing, no ligatures or contextual alternates (`->` stays two glyphs).
  */
 import { createRequire } from 'node:module';
 import * as fontkit from 'fontkit';
 import type { Measure } from '../src/text/fit';
+import { faceFor, findFamily, openFace, type Face } from './fonts';
 
 const require = createRequire(import.meta.url);
-type Font = { unitsPerEm: number; layout(s: string): { advanceWidth: number }; hasGlyphForCodePoint(c: number): boolean };
+type Font = { unitsPerEm: number; layout(s: string, features?: Record<string, boolean>): { advanceWidth: number }; hasGlyphForCodePoint(c: number): boolean };
+const AS_WRITTEN = { calt: false, liga: false, clig: false };
 
 const WEIGHTS = [400, 500, 600, 700];
 const fonts = new Map<string, Font | null>();
@@ -28,9 +31,10 @@ function load(subset: 'latin' | 'latin-ext', weight: number): Font | null {
 const WIDE = /[ᄀ-ᅟ⺀-꓏가-힣豈-﫿︰-﹏＀-｠￠-￦　-〿]/;
 const cache = new Map<string, number>();
 
-export const fontMeasure: Measure = (text, weight) => {
+export const fontMeasure: Measure = (text, weight, family) => {
   const w = WEIGHTS.reduce((a, b) => (Math.abs(b - weight) < Math.abs(a - weight) ? b : a));
-  const key = w + '|' + text;
+  const faces = family ? findFamily(family) : undefined;
+  const key = (faces ? weight + '|' + family : w) + '|' + text;
   const hit = cache.get(key);
   if (hit !== undefined) return hit;
   const latin = load('latin', w);
@@ -39,12 +43,15 @@ export const fontMeasure: Measure = (text, weight) => {
   let run = '';
   let runFont: Font | null = null;
   const flush = () => {
-    if (run && runFont) total += (runFont.layout(run).advanceWidth * 100) / runFont.unitsPerEm;
+    if (run && runFont) total += (runFont.layout(run, AS_WRITTEN).advanceWidth * 100) / runFont.unitsPerEm;
     run = '';
   };
+  let face: Face | undefined;
   for (const ch of text) {
     const cp = ch.codePointAt(0)!;
-    const f = latin?.hasGlyphForCodePoint(cp) ? latin : ext?.hasGlyphForCodePoint(cp) ? ext : null;
+    // the family's own glyph if it has one, else the default stack (as the browser falls back)
+    face = faces ? faceFor(faces, weight, cp) : undefined;
+    const f = face ? openFace(face) : latin?.hasGlyphForCodePoint(cp) ? latin : ext?.hasGlyphForCodePoint(cp) ? ext : null;
     if (f) {
       if (f !== runFont) flush();
       runFont = f;

@@ -37,6 +37,7 @@ import { LiveText, NumField, Seg, ShapeIcon, SHAPE_NAMES, Swatches } from './ui'
 import { descendants, endText } from '../dsl/parse';
 import { IGNORE_NAME } from '../check/check';
 import { ignoreIssue, ignoreList, setIgnore } from '../actions';
+import { useFamilies } from '../fonts';
 
 const FILLS = ['#ffffff', '#f8fafc', '#f1f5f9', '#eef2ff', '#ede9fe', '#fdf4ff', '#fff1f2', '#fff7ed', '#fefce8', '#ecfdf5', '#ecfeff', '#e0f2fe', '#1e293b', '#0f172a'];
 const STROKES = ['#0f172a', '#334155', '#64748b', '#94a3b8', '#6366f1', '#7c3aed', '#c026d3', '#e11d48', '#ea580c', '#ca8a04', '#059669', '#0891b2', '#0284c7', '#ffffff'];
@@ -293,6 +294,9 @@ function NodeInspector({ nodes, doc }: { nodes: State['layout']['nodes']; doc: D
           )}
         </div>
         <div className="row">
+          <FamilyField value={first.def.attrs.family} inherited={first.def.attrs.family ? undefined : st.family} onChange={(v) => setAttr('family', v)} />
+        </div>
+        <div className="row">
           <Seg
             small
             value={st.weight >= 650 ? 'bold' : st.weight <= 420 ? 'light' : 'normal'}
@@ -546,6 +550,12 @@ function EdgeInspector({ edges }: { edges: State['layout']['edges'] }) {
           <LiveText key={first.key} value={first.def.label} onChange={(v) => edit((src, d) => setEdgeLabel(src, d, first.key, v))} placeholder="（なし）" />
         </div>
       )}
+      {edges.some((e) => e.def.label) && (
+        <div className="section">
+          <div className="section-label">ラベルのフォント</div>
+          <FamilyField value={first.def.attrs.family} inherited={first.def.attrs.family ? undefined : st.family} onChange={(v) => setAttr('family', v)} />
+        </div>
+      )}
       <div className="section">
         <div className="section-label">向き</div>
         <Seg<ArrowOp>
@@ -715,6 +725,33 @@ function DeckSection({ doc }: { doc: Doc }) {
   );
 }
 
+/**
+ * Font family menu. On a shape / arrow: '' = inherit (style, then the set line), `default` = the
+ * built-in font. On the set line (`root`): '' = the built-in font.
+ */
+function FamilyField({ value, inherited, onChange, root }: { value: string | undefined; inherited?: string; onChange: (v: string | undefined) => void; root?: boolean }) {
+  // Inter is the built-in font, offered as its own entry
+  const families = useFamilies().filter((f) => f.toLowerCase() !== 'inter');
+  const known = (f: string) => families.some((x) => x.toLowerCase() === f.toLowerCase());
+  const extra = value && value !== 'default' && !known(value) ? [value] : [];
+  return (
+    <select className="field" style={{ flex: 1 }} value={value ?? ''} onChange={(e) => onChange(e.target.value || undefined)} title="family=">
+      <option value="">{root ? '組み込み（Inter）' : `継承（${inherited ?? '組み込み'}）`}</option>
+      {!root && <option value="default">組み込み（Inter）</option>}
+      {families.map((f) => (
+        <option key={f} value={f}>
+          {f}
+        </option>
+      ))}
+      {extra.map((f) => (
+        <option key={f} value={f}>
+          {f}（見つかりません）
+        </option>
+      ))}
+    </select>
+  );
+}
+
 function DocInspector({ doc }: { doc: Doc }) {
   const s = useStore.getState();
   const issues = useStore((st) => st.issues);
@@ -734,6 +771,11 @@ function DocInspector({ doc }: { doc: Doc }) {
         </div>
       </div>
       {doc.deck && <DeckSection doc={doc} />}
+      <div className="section">
+        <div className="section-label">フォント（set family=）</div>
+        <FamilyField root value={doc.settingsAttrs.family} onChange={(v) => s.apply((src, d) => setSetting(src, d, 'family', v))} />
+        <div className="hint-text">図形・矢印・style で family を指定していない文字に使われます。</div>
+      </div>
       <div className="section">
         <div className="section-label">制約とレイアウト（set 行）</div>
         {SETTING_INFO.map((it) => (

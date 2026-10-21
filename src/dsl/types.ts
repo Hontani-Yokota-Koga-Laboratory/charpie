@@ -102,6 +102,8 @@ export interface Settings {
   padding: number;
   fontmin: number;
   fontmax: number;
+  /** `set family="..."`: font family of the whole file */
+  family?: string;
 }
 
 export interface Diagnostic {

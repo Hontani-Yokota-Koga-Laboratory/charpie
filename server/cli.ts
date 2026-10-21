@@ -8,6 +8,7 @@ import { views } from '../src/dsl/parse';
 import type { View } from '../src/dsl/types';
 import { createApi } from './api';
 import { fontMeasure } from './measure';
+import { embedFonts } from './fonts';
 import { svgsToPdf, svgToPng } from './png';
 import { fileResolver } from './embed';
 import { setEmbedResolver } from '../src/layout';
@@ -185,7 +186,7 @@ async function exportCmd(args: string[]) {
   const svgOf = (v: View | undefined) => {
     const l = analyze(src, fontMeasure, v, path.resolve(args[0])).layout;
     const images = embedImages(dir, imageSources(l));
-    return exportSvg(l, '#ffffff', (s) => images.get(s));
+    return embedFonts(exportSvg(l, '#ffffff', (s) => images.get(s)));
   };
   if (fmt === 'pdf') {
     const pages = view ? [view] : views(src).filter((v) => !v || 'page' in v);

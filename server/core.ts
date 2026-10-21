@@ -2,6 +2,8 @@
  * Pure document operations used by the HTTP API and the CLI.
  * Everything takes source text and returns source text.
  */
+import { fontsNear, findFamily } from './fonts';
+import { setFontLookup } from '../src/check/check';
 import { endText, parse as parseView, views } from '../src/dsl/parse';
 import {
   addEdge,
@@ -45,8 +47,12 @@ export interface Analysis {
   ignored: Issue[];
 }
 
+// `family=` warnings: the server knows which fonts exist
+setFontLookup((f) => !!findFamily(f));
+
 /** `file`: absolute path of the .charpie, for diagrams it embeds (`src="other.charpie"`). */
 export function analyze(src: string, measure: Measure, view?: View, file?: string): Analysis {
+  fontsNear(file);
   const doc = parseView(src, view);
   const layout = withEmbedBase(file, () => computeLayout(doc, measure));
   const all = checkAll(doc, layout);
@@ -176,7 +182,7 @@ export type Op =
   | { op: 'match-size'; ids: string[]; mode?: 'width' | 'height' | 'both' }
   | { op: 'stack'; ids: string[]; axis: 'h' | 'v'; gap?: number }
   | { op: 'fix'; only?: string[] }
-  | { op: 'setting'; key: string; value: number | null }
+  | { op: 'setting'; key: string; value: number | string | null }
   | { op: 'add-page'; id?: string; label?: string; layout?: string; after?: string }
   | { op: 'remove-page'; id: string }
   | { op: 'duplicate-page'; id: string; to?: string }

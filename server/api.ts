@@ -9,6 +9,7 @@ import { setEmbedResolver } from '../src/layout';
 import { fileResolver } from './embed';
 import { helpText } from './help';
 import { fontMeasure } from './measure';
+import { embeddedFontCss, embedFonts, faceById, fontCss, fontMime, fontsNear, listFamilies } from './fonts';
 import { embedImages, HttpError, IMAGE_MIME, type BrowserState, type Workspace } from './workspace';
 
 type Next = (err?: unknown) => void;
@@ -167,7 +168,7 @@ export function createApi(ws: Workspace) {
           const fmt = q.get('format') ?? 'svg';
           if (fmt === 'svg') {
             const images = embedImages(path.dirname(ws.resolve(file).abs), imageSources(a.layout), ws.root);
-            return send(res, 200, exportSvg(a.layout, q.get('bg') === 'none' ? null : '#ffffff', (s) => images.get(s)), 'image/svg+xml; charset=utf-8');
+            return send(res, 200, embedFonts(exportSvg(a.layout, q.get('bg') === 'none' ? null : '#ffffff', (s) => images.get(s))), 'image/svg+xml; charset=utf-8');
           }
           if (fmt === 'tikz' && q.get('all') && a.doc.deck) {
             const src = ws.read(file);
@@ -176,6 +177,25 @@ export function createApi(ws: Workspace) {
           }
           if (fmt === 'tikz') return send(res, 200, exportTikz(a.layout), 'text/x-tex; charset=utf-8');
           throw new HttpError(400, 'format must be svg or tikz');
+        }
+
+        // fonts for family= : @font-face rules the browser loads, and the files themselves
+        case 'GET /api/fonts': {
+          const file = ws.pick(q.get('file'));
+          fontsNear(ws.resolve(file).abs);
+          return send(res, 200, fontCss(q.getAll('family'), (f) => `/api/font/${f.id}`));
+        }
+        case 'GET /api/fonts/list': {
+          // names the font menu offers (fonts/ next to the file, installed Fontsource packages)
+          const file = ws.pick(q.get('file'));
+          fontsNear(ws.resolve(file).abs);
+          return send(res, 200, { families: listFamilies() });
+        }
+        case 'POST /api/fonts/embed': {
+          // the browser's own exports: self-contained faces for the families an SVG uses
+          const body = json<{ file?: string; svg: string }>(await readBody(req));
+          if (body.file) fontsNear(ws.resolve(ws.pick(body.file)).abs);
+          return send(res, 200, embeddedFontCss(body.svg ?? ''), 'text/css; charset=utf-8');
         }
 
         // images: `src=` is relative to the .charpie file
@@ -228,6 +248,15 @@ export function createApi(ws: Workspace) {
           return send(res, 200, { ok: true });
         }
         default:
+          if (req.method === 'GET' && url.pathname.startsWith('/api/font/')) {
+            const face = faceById(url.pathname.slice('/api/font/'.length));
+            if (!face) throw new HttpError(404, 'no such font');
+            res.statusCode = 200;
+            res.setHeader('Content-Type', fontMime(face.file));
+            res.setHeader('Cache-Control', 'max-age=86400');
+            fs.createReadStream(face.file).pipe(res);
+            return;
+          }
           throw new HttpError(404, `no such endpoint: ${route}  (GET /api for help)`);
       }
     } catch (e) {
