@@ -11,6 +11,19 @@ export function exportSvg(layout: Layout, bg: string | null = '#ffffff', images?
   return '<?xml version="1.0" encoding="UTF-8"?>\n' + renderToStaticMarkup(createElement(DiagramSvg, { layout, bg, images }));
 }
 
+/**
+ * Prefix every `id=` of an SVG (and the `#id` references to it). Each page is rendered on its own,
+ * so their ids (clip paths of embedded diagrams, …) repeat; once several pages share one document
+ * (PDF), a reference would otherwise pick up another page's definition.
+ */
+export function scopeIds(svg: string, prefix: string): string {
+  const ids = new Set([...svg.matchAll(/\sid="([^"]+)"/g)].map((m) => m[1]));
+  if (!ids.size) return svg;
+  return svg
+    .replace(/(\sid=")([^"]+)"/g, (_, open: string, id: string) => `${open}${prefix}${id}"`)
+    .replace(/(url\(#|href="#)([^)"]+)/g, (all, open: string, id: string) => (ids.has(id) ? open + prefix + id : all));
+}
+
 /** Distinct `src=` of the image shapes in a layout. */
 export function imageSources(layout: Layout): string[] {
   // pictures inside embedded diagrams too (their src is already relative to this file)

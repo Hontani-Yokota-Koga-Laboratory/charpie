@@ -30,7 +30,7 @@ import { IGNORE_NAME, ISSUE_LABEL } from '../check/check';
 import { ignoreIssue, unignoreIssue } from '../actions';
 import { autoFix } from '../check/resolve';
 import { canvasMeasure } from '../text/fit';
-import { download, exportPng, exportSvgStandalone, exportTikz, exportTikzDeck, openFile, printPages, resetFileHandle, saveFile } from '../export';
+import { download, exportPdf, exportPng, exportSvgStandalone, exportTikz, exportTikzDeck, openFile, resetFileHandle, saveFile } from '../export';
 import { flush, revert, save as saveRemote } from '../remote';
 import { askConfirm } from './Dialog';
 import { newFileDialog } from './NewFile';
@@ -375,11 +375,22 @@ export function TopBar({ onHelp }: { onHelp: () => void }) {
                   onClick={async () => {
                     close();
                     const st = useStore.getState();
-                    const layouts = (st.doc.deck?.pages ?? []).map((p) => computeLayout(parse(st.src, { page: p.id }), canvasMeasure));
-                    await printPages(layouts, base);
+                    const src = st.src;
+                    const pages = st.doc.deck?.pages ?? [];
+                    st.notify('PDF を書き出しています…');
+                    try {
+                      const { pdf, vector } = await exportPdf(st.workspace.on ? st.workspace.file : null, src, () =>
+                        pages.map((p) => computeLayout(parse(src, { page: p.id }), canvasMeasure)),
+                      );
+                      // a generic type: some browsers (Firefox by default) open application/pdf in their viewer instead of saving it
+                      download(base + '.pdf', new Blob([pdf], { type: 'application/octet-stream' }));
+                      st.notify(vector ? `${base}.pdf（${pages.length} ページ）を書き出しました` : `${base}.pdf を画像で書き出しました（サーバーでのベクター出力が使えないため）`, vector ? 'ok' : 'warn');
+                    } catch (e) {
+                      st.notify(`PDF を書き出せませんでした: ${(e as Error).message}`, 'warn');
+                    }
                   }}
                 >
-                  <FileDown size={15} /> PDF（全ページ）<span className="hint">印刷から保存</span>
+                  <FileDown size={15} /> PDF（全ページ）
                 </button>
               </>
             ) : (

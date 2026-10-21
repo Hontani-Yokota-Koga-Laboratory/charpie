@@ -16,6 +16,8 @@ GET  /api/selection                     what the user has selected in the browse
                                         (unsaved: true = the browser holds edits not yet saved to disk)
 GET  /api/export?file=NAME&format=svg   or format=tikz (svg embeds the pictures of image shapes)
                                         decks: one page (&page=ID); format=tikz&all=1 = every page as one LaTeX document
+GET  /api/export/pdf?file=NAME          PDF via headless Chromium: every page of a deck (or &page=ID), else the diagram
+                                        (POST {file, src} renders text not yet saved)
 GET  /api/asset?file=NAME&src=PATH      a picture referenced by an image shape (src relative to the .charpie)
 GET  /api/fonts?file=NAME&family=F      @font-face CSS for family= fonts ({"css","missing"}); files at /api/font/<id>
 GET  /api/fonts/list?file=NAME          family names family= can use ({"families"}: fonts/ next to the file + installed @fontsource packages)

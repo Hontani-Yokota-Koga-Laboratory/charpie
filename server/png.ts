@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
+import { scopeIds } from '../src/exportFormats';
 
 const require = createRequire(import.meta.url);
 
@@ -115,7 +116,7 @@ export async function svgsToPdf(svgs: string[]): Promise<Buffer> {
   try {
     const { w, h } = svgSize(svgs[0] ?? '');
     const page = await browser.newPage({ viewport: { width: w, height: h } });
-    const pages = svgs.map((s) => `<section>${bare(s)}</section>`).join('');
+    const pages = svgs.map((s, i) => `<section>${scopeIds(bare(s), `p${i}-`)}</section>`).join('');
     await page.setContent(
       `<!doctype html><html><head><meta charset="utf-8"><style>${fontFaces()}\n@page{size:${w}px ${h}px;margin:0}html,body{margin:0;padding:0}section{width:${w}px;height:${h}px;overflow:hidden;break-after:page}section:last-child{break-after:auto}svg{display:block;width:${w}px;height:${h}px}</style></head><body>${pages}</body></html>`,
     );

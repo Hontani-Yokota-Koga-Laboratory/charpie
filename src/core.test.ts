@@ -371,7 +371,7 @@ describe('ignore=', () => {
 
 import { quote } from './dsl/patch';
 import { splitMath } from './text/math';
-import { exportTikz } from './exportFormats';
+import { exportTikz, scopeIds } from './exportFormats';
 describe('tex labels', () => {
   it('keeps TeX backslashes inside $...$ and round-trips through quote', () => {
     const src = String.raw`rect a "勾配 \$5\n$\nabla f \le \frac{1}{2}$" at (0, 0) size 200x80`;
@@ -391,5 +391,12 @@ describe('tex labels', () => {
     expect(a.rich?.[0]?.runs.map((r) => r.math)).toEqual([false, true, false]);
     expect(exportTikz(layout)).toContain('{x $a^2 + b^2 = c^2$ y}');
     expect(checkLayout(doc, layout).map((i) => i.code)).toEqual(['tex']);
+  });
+});
+
+describe('scopeIds', () => {
+  it('prefixes ids and the references to them, leaving other references alone', () => {
+    const svg = '<svg><clipPath id="embR0"><rect/></clipPath><g clip-path="url(#embR0)"><use href="#embR0"/><use href="#other"/></g></svg>';
+    expect(scopeIds(svg, 'p1-')).toBe('<svg><clipPath id="p1-embR0"><rect/></clipPath><g clip-path="url(#p1-embR0)"><use href="#p1-embR0"/><use href="#other"/></g></svg>');
   });
 });

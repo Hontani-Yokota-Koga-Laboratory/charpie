@@ -8,12 +8,12 @@ import { views } from '../src/dsl/parse';
 import type { View } from '../src/dsl/types';
 import { createApi } from './api';
 import { fontMeasure } from './measure';
-import { embedFonts } from './fonts';
-import { svgsToPdf, svgToPng } from './png';
+import { svgToPng } from './png';
+import { filePdf, standaloneSvg } from './pdf';
 import { fileResolver } from './embed';
 import { setEmbedResolver } from '../src/layout';
-import { embedImages, Workspace } from './workspace';
-import { exportSvg, exportTikz, exportTikzDeck, imageSources } from '../src/exportFormats';
+import { Workspace } from './workspace';
+import { exportTikz, exportTikzDeck } from '../src/exportFormats';
 
 const HELP = `charpie — text-first diagram editor
 
@@ -182,18 +182,12 @@ async function exportCmd(args: string[]) {
   const fmt = arg(args, '--format', '-f') ?? (out?.endsWith('.png') ? 'png' : out?.endsWith('.tex') ? 'tikz' : out?.endsWith('.pdf') ? 'pdf' : 'svg');
   const view = viewArg(args);
   const src = fs.readFileSync(args[0], 'utf8');
-  const dir = path.dirname(path.resolve(args[0]));
-  const svgOf = (v: View | undefined) => {
-    const l = analyze(src, fontMeasure, v, path.resolve(args[0])).layout;
-    const images = embedImages(dir, imageSources(l));
-    return embedFonts(exportSvg(l, '#ffffff', (s) => images.get(s)));
-  };
+  const svgOf = (v: View | undefined) => standaloneSvg(src, path.resolve(args[0]), v);
   if (fmt === 'pdf') {
-    const pages = view ? [view] : views(src).filter((v) => !v || 'page' in v);
-    const pdf = await svgsToPdf(pages.map(svgOf));
+    const { pdf, pages } = await filePdf(src, path.resolve(args[0]), view);
     if (out) fs.writeFileSync(out, pdf);
     else process.stdout.write(pdf);
-    if (out) console.error(`${out}: ${pages.length} page${pages.length === 1 ? '' : 's'}`);
+    if (out) console.error(`${out}: ${pages} page${pages === 1 ? '' : 's'}`);
     return;
   }
   const pages = views(src).filter((v) => v && 'page' in v);

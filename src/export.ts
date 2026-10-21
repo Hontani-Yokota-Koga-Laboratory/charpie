@@ -3,6 +3,8 @@ import type { Layout } from './layout';
 import { exportSvg } from './exportFormats';
 import { embeddedImages } from './images';
 import { fontCssFor } from './fonts';
+import { withEmbeds } from './embeds';
+import { jpegPdf, type PdfPage } from './pdf';
 
 export { exportSvg, exportTikz, exportTikzDeck } from './exportFormats';
 
@@ -14,12 +16,18 @@ export async function exportSvgStandalone(layout: Layout, bg: string | null = '#
   return css ? svg.replace(/<svg\b[^>]*>/, (open) => `${open}<style>${css}</style>`) : svg;
 }
 
-export async function exportPng(layout: Layout, scale = 2, bg = '#ffffff'): Promise<Blob> {
-  const svg = await exportSvgStandalone(layout, bg);
+/** The exported picture's size in CSS px: the page of a slide, else the diagram plus a margin. */
+function pictureSize(layout: Layout): { w: number; h: number } {
   const b = layout.frame ?? diagramBounds(layout);
   const pad = layout.frame ? 0 : 48;
-  const w = Math.ceil((b.w + pad) * scale),
-    h = Math.ceil((b.h + pad) * scale);
+  return { w: b.w + pad, h: b.h + pad };
+}
+
+async function rasterize(layout: Layout, scale: number, bg: string, type: 'image/png' | 'image/jpeg'): Promise<{ blob: Blob; w: number; h: number }> {
+  const svg = await exportSvgStandalone(layout, bg);
+  const size = pictureSize(layout);
+  const w = Math.ceil(size.w * scale),
+    h = Math.ceil(size.h * scale);
   const img = new Image();
   const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
   try {
@@ -32,40 +40,45 @@ export async function exportPng(layout: Layout, scale = 2, bg = '#ffffff'): Prom
     canvas.width = w;
     canvas.height = h;
     const ctx = canvas.getContext('2d')!;
+    if (type === 'image/jpeg') {
+      ctx.fillStyle = bg;
+      ctx.fillRect(0, 0, w, h);
+    }
     ctx.drawImage(img, 0, 0, w, h);
-    return await new Promise<Blob>((res, rej) => canvas.toBlob((bl) => (bl ? res(bl) : rej(new Error('PNG 変換に失敗しました'))), 'image/png'));
+    const blob = await new Promise<Blob>((res, rej) => canvas.toBlob((bl) => (bl ? res(bl) : rej(new Error('画像への変換に失敗しました'))), type, 0.92));
+    return { blob, w, h };
   } finally {
     URL.revokeObjectURL(url);
   }
 }
 
+export async function exportPng(layout: Layout, scale = 2, bg = '#ffffff'): Promise<Blob> {
+  return (await rasterize(layout, scale, bg, 'image/png')).blob;
+}
+
 /**
- * PDF of a deck through the browser's print dialog ("Save as PDF"): one page per slide, vector,
- * with the app's fonts (the page's stylesheets are copied into the print frame).
+ * PDF of the open file: every page of a deck, else the diagram. The server renders it as vector
+ * (headless Chromium, the same as `charpie export -o x.pdf`) from the text as it is now, saved or not;
+ * without it, the pages are drawn here as pictures. Either way the page is exactly the slide — no
+ * print dialog, so no margins or scaling that depend on the browser.
  */
-export async function printPages(layouts: Layout[], title: string): Promise<void> {
-  const f = layouts[0]?.frame ?? { x: 0, y: 0, w: 1280, h: 720 };
-  const svgs = await Promise.all(layouts.map((l) => exportSvgStandalone(l)));
-  const frame = document.createElement('iframe');
-  frame.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden';
-  document.body.appendChild(frame);
-  const doc = frame.contentDocument!;
-  doc.open();
-  doc.write(
-    `<!doctype html><html><head><meta charset="utf-8"><title>${title.replace(/</g, '&lt;')}</title></head><body>${svgs
-      .map((s) => `<section>${s.replace(/^<\?xml[^>]*>\s*/, '')}</section>`)
-      .join('')}</body></html>`,
-  );
-  doc.close();
-  for (const el of document.querySelectorAll('style, link[rel="stylesheet"]')) doc.head.appendChild(doc.importNode(el, true));
-  const style = doc.createElement('style');
-  style.textContent = `@page{size:${f.w}px ${f.h}px;margin:0}html,body{margin:0!important;padding:0!important;background:#fff!important;overflow:visible!important;height:auto!important}section{width:${f.w}px;height:${f.h}px;overflow:hidden;break-after:page}section:last-child{break-after:auto}svg{display:block;width:${f.w}px;height:${f.h}px}`;
-  doc.head.appendChild(style);
-  await doc.fonts?.ready;
-  await new Promise((r) => setTimeout(r, 100));
-  frame.contentWindow!.focus();
-  frame.contentWindow!.print();
-  setTimeout(() => frame.remove(), 60_000);
+export async function exportPdf(file: string | null, src: string, layouts: () => Layout[]): Promise<{ pdf: Blob; vector: boolean }> {
+  if (file) {
+    try {
+      const r = await fetch('/api/export/pdf', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ file, src }) });
+      if (r.ok) return { pdf: await r.blob(), vector: true };
+      console.warn('[charpie] server PDF failed:', ((await r.json().catch(() => ({}))) as { error?: string }).error ?? r.status);
+    } catch (e) {
+      console.warn('[charpie] server PDF failed:', e);
+    }
+  }
+  const ls = await withEmbeds(layouts);
+  const pages: PdfPage[] = [];
+  for (const l of ls) {
+    const { blob, w, h } = await rasterize(l, 2, '#ffffff', 'image/jpeg');
+    pages.push({ jpeg: new Uint8Array(await blob.arrayBuffer()), px: { w, h }, size: pictureSize(l) });
+  }
+  return { pdf: jpegPdf(pages, file?.replace(/^.*\//, '').replace(/\.charpie$/, '') ?? ''), vector: false };
 }
 
 // ───────────── file helpers ─────────────

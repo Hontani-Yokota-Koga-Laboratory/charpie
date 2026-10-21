@@ -7,6 +7,7 @@ import { analyze, applyOps, issuesAll, measureNodes, summarize, viewParam, type 
 import { views } from '../src/dsl/parse';
 import { setEmbedResolver } from '../src/layout';
 import { fileResolver } from './embed';
+import { filePdf } from './pdf';
 import { helpText } from './help';
 import { fontMeasure } from './measure';
 import { embeddedFontCss, embedFonts, faceById, fontCss, fontMime, fontsNear, listFamilies } from './fonts';
@@ -177,6 +178,21 @@ export function createApi(ws: Workspace) {
           }
           if (fmt === 'tikz') return send(res, 200, exportTikz(a.layout), 'text/x-tex; charset=utf-8');
           throw new HttpError(400, 'format must be svg or tikz');
+        }
+
+        // PDF rendered here (headless Chromium): exact page size, no print dialog; `src` = the browser's unsaved text
+        case 'GET /api/export/pdf':
+        case 'POST /api/export/pdf': {
+          const body = req.method === 'POST' ? json<{ file?: string; src?: string; page?: string }>(await readBody(req)) : {};
+          const file = ws.pick(body.file ?? q.get('file'));
+          const src = typeof body.src === 'string' ? body.src : ws.read(file);
+          const page = body.page ?? q.get('page');
+          const { pdf } = await filePdf(src, ws.resolve(file).abs, page ? { page } : undefined, ws.root);
+          res.statusCode = 200;
+          res.setHeader('Content-Type', 'application/pdf');
+          res.setHeader('Cache-Control', 'no-store');
+          res.end(pdf);
+          return;
         }
 
         // fonts for family= : @font-face rules the browser loads, and the files themselves
