@@ -2,7 +2,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { hashText } from '../src/hash';
 import fs from 'node:fs';
 import path from 'node:path';
-import { exportSvg, exportTikz, imageSources } from '../src/exportFormats';
+import { exportSvg, exportTikz, exportTikzDeck, imageSources } from '../src/exportFormats';
 import { analyze, applyOps, issuesAll, measureNodes, summarize, viewParam, type IssueOut, type Op } from './core';
 import { views } from '../src/dsl/parse';
 import { setEmbedResolver } from '../src/layout';
@@ -168,6 +168,11 @@ export function createApi(ws: Workspace) {
           if (fmt === 'svg') {
             const images = embedImages(path.dirname(ws.resolve(file).abs), imageSources(a.layout), ws.root);
             return send(res, 200, exportSvg(a.layout, q.get('bg') === 'none' ? null : '#ffffff', (s) => images.get(s)), 'image/svg+xml; charset=utf-8');
+          }
+          if (fmt === 'tikz' && q.get('all') && a.doc.deck) {
+            const src = ws.read(file);
+            const layouts = a.doc.deck.pages.map((p) => analyze(src, fontMeasure, { page: p.id }, ws.resolve(file).abs).layout);
+            return send(res, 200, exportTikzDeck(layouts), 'text/x-tex; charset=utf-8');
           }
           if (fmt === 'tikz') return send(res, 200, exportTikz(a.layout), 'text/x-tex; charset=utf-8');
           throw new HttpError(400, 'format must be svg or tikz');

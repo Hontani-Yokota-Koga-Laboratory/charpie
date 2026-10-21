@@ -12,7 +12,7 @@ import { svgsToPdf, svgToPng } from './png';
 import { fileResolver } from './embed';
 import { setEmbedResolver } from '../src/layout';
 import { embedImages, Workspace } from './workspace';
-import { exportSvg, exportTikz, imageSources } from '../src/exportFormats';
+import { exportSvg, exportTikz, exportTikzDeck, imageSources } from '../src/exportFormats';
 
 const HELP = `charpie — text-first diagram editor
 
@@ -24,8 +24,9 @@ Usage:
                                                smallest box that still fits the label as written (fit)
   charpie export <file> [--format svg|tikz|png|pdf] [--scale 2] [--page ID | --layout NAME] [-o out]
                                                png / pdf render via headless Chromium (format inferred from -o)
-                                               decks: svg/png/tikz export one page (default: the first),
-                                               pdf exports every page
+                                               decks: svg/png export one page (default: the first);
+                                               pdf and tikz (a LaTeX document, lualatex) every page,
+                                               or one with --page
 
 Decks (files with page / layout blocks) are checked, fixed and measured page by page.
 measure takes --page / --layout to pick one view (default: all).
@@ -192,6 +193,14 @@ async function exportCmd(args: string[]) {
     if (out) fs.writeFileSync(out, pdf);
     else process.stdout.write(pdf);
     if (out) console.error(`${out}: ${pages.length} page${pages.length === 1 ? '' : 's'}`);
+    return;
+  }
+  const pages = views(src).filter((v) => v && 'page' in v);
+  if (fmt === 'tikz' && !view && pages.length) {
+    // a deck: every page in one LaTeX document
+    const text = exportTikzDeck(pages.map((v) => analyze(src, fontMeasure, v, path.resolve(args[0])).layout));
+    if (out) fs.writeFileSync(out, text);
+    else process.stdout.write(text);
     return;
   }
   const a = analyze(src, fontMeasure, view, path.resolve(args[0]));
