@@ -95,6 +95,9 @@
   padding: 2px;
 }
 .gal-seg button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   border: 0;
   background: transparent;
   color: var(--text-2);
@@ -135,10 +138,21 @@
   padding: 18px 22px 28px;
 }
 .gal-empty {
-  display: grid;
-  place-items: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   height: 100%;
   color: var(--muted);
+}
+.gal-count {
+  font-size: 11px;
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
+.gal-badge.slides {
+  background: #0f172a;
+  color: #fff;
 }
 .gal-grid {
   display: grid;

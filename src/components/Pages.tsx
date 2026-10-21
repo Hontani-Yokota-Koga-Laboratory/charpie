@@ -5,7 +5,9 @@
 import { memo, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, ChevronDown, ChevronUp, Copy, Ellipsis, LayoutTemplate, Play, Plus, Trash2, X } from 'lucide-react';
 import { parse } from '../dsl/parse';
-import { addLayout, addPage, duplicatePage, movePage, removePage, setPageHeader, uniquePageId } from '../dsl/patch';
+import { addPage, duplicatePage, movePage, removePage, setPageHeader, uniquePageId } from '../dsl/patch';
+import { askConfirm } from './Dialog';
+import { layoutDialog } from './NewFile';
 import { sameView, type View } from '../dsl/types';
 import { computeLayout, type Layout } from '../layout';
 import { checkLayout } from '../check/check';
@@ -183,8 +185,9 @@ export function PagesPanel() {
                     <button
                       className="menu-item danger"
                       disabled={deck.pages.length <= 1}
-                      onClick={() => {
-                        if (!confirm(`ページ「${p.label || p.id}」を削除しますか？`)) return;
+                      onClick={async () => {
+                        setMenu(null);
+                        if (!(await askConfirm({ title: `ページ「${p.label || p.id}」を削除しますか？`, message: 'Ctrl+Z で戻せます。', ok: '削除', danger: true }))) return;
                         const next = deck.pages[i + 1] ?? deck.pages[i - 1];
                         act((src) => removePage(src, full(src), p.id), next && { page: next.id });
                       }}
@@ -204,11 +207,9 @@ export function PagesPanel() {
         <button
           className="icon-btn tip tip-bottom"
           data-tip="レイアウトを追加"
-          onClick={() => {
-            const name = prompt('レイアウト名（英数字）', deck.layouts.length ? `layout${deck.layouts.length + 1}` : 'default');
-            if (!name) return;
-            const parent = deck.layouts.some((l) => l.name === 'default') && name !== 'default' ? 'default' : undefined;
-            act((src) => addLayout(src, full(src), name, parent), { layout: name });
+          onClick={async () => {
+            const name = await layoutDialog();
+            if (name) s().setPage({ layout: name });
           }}
         >
           <Plus size={16} />

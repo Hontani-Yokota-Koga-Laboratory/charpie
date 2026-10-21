@@ -287,8 +287,8 @@ function NodeInspector({ nodes, doc }: { nodes: State['layout']['nodes']; doc: D
             </span>
           ) : (
             <>
-              <input className="slider" type="range" min={6} max={48} step={1} value={st.font} onChange={(e) => edit((src, d) => setNodesAttr(src, d, ids, 'font', e.target.value))} onPointerDown={() => s.beginGesture()} onPointerUp={() => s.endGesture()} />
-              <span className="val">{st.font}px</span>
+              <input className="slider" type="range" min={6} max={Math.max(120, Number(st.font))} step={1} value={st.font} onChange={(e) => edit((src, d) => setNodesAttr(src, d, ids, 'font', e.target.value))} onPointerDown={() => s.beginGesture()} onPointerUp={() => s.endGesture()} />
+              <NumField label="px" value={Number(st.font)} min={1} onChange={(v) => edit((src, d) => setNodesAttr(src, d, ids, 'font', String(Math.round(v))))} onScrubStart={() => s.beginGesture()} onScrubEnd={() => s.endGesture()} />
             </>
           )}
         </div>

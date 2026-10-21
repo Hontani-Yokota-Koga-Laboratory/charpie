@@ -15,9 +15,10 @@ import { MobileSheet } from './components/MobileSheet';
 import { deleteSelection, duplicateSelection } from './actions';
 import { insertImages, isImageFile } from './images';
 import { LayoutBanner, PagesPanel, Presenter } from './components/Pages';
+import { DialogHost } from './components/Dialog';
 
 function isTyping(t: EventTarget | null) {
-  return t instanceof HTMLElement && (t.isContentEditable || /INPUT|TEXTAREA|SELECT/.test(t.tagName) || !!t.closest('.cm-editor'));
+  return t instanceof HTMLElement && (t.isContentEditable || /INPUT|TEXTAREA|SELECT/.test(t.tagName) || !!t.closest('.cm-editor, .dlg'));
 }
 
 let clipboard = '';
@@ -222,6 +223,7 @@ export function App() {
       </div>
       <Toast />
       <Presenter />
+      <DialogHost />
       {help && <Help onClose={() => setHelp(false)} />}
     </div>
   );

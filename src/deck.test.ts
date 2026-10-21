@@ -287,3 +287,76 @@ describe('embedded diagrams', () => {
     }
   });
 });
+
+import { importLayouts, rebasePath } from './dsl/patch';
+import { slideFromDeck, slideTemplate } from './templates';
+
+describe('templates and layout import', () => {
+  it('starts a clean deck', () => {
+    const s = slideTemplate('研究発表');
+    const d = parse(s);
+    expect(d.diagnostics).toEqual([]);
+    expect(d.deck!.pages.map((p) => p.id)).toEqual(['cover', 'p2']);
+    for (const v of [{ page: 'cover' }, { page: 'p2' }, { layout: 'default' }, { layout: 'content' }]) {
+      const pd = parse(s, v);
+      expect(checkLayout(pd, computeLayout(pd, approxMeasureFn)).filter((i) => i.severity === 'error')).toEqual([]);
+    }
+  });
+  it('imports layouts with their parents and styles, renaming clashes and rebasing pictures', () => {
+    const other = `set canvas=1280x720\nstyle band { fill: #4f46e5;\n  stroke: none; }\nstyle x { fill: #fff; }\nlayout default {\n  rect band at (0, 0) size 1280x12 .band\n  image logo at (1200, 20) size 40x40 src="assets/logo.png"\n}\nlayout two extends default {\n  slot left at (40, 120) size 580x540\n}\npage p {\n}\n`;
+    const mine = `set canvas=1280x720\nstyle x { fill: #000; }\nlayout default {\n  text t "mine" at (0, 0) size 100x30\n}\npage a {\n}\n`;
+    const r = importLayouts(mine, parse(mine), other, ['two'], (p) => rebasePath(p, 'decks/old.charpie', 'new.charpie'));
+    expect(r.layouts).toEqual(['default2', 'two']);
+    expect(r.renamed).toEqual({ default: 'default2' });
+    expect(r.styles).toEqual(['band']);
+    const d = parse(r.src);
+    expect(d.diagnostics).toEqual([]);
+    expect(d.deck!.layouts.map((l) => [l.name, l.extends])).toEqual([
+      ['default', undefined],
+      ['default2', undefined],
+      ['two', 'default2'],
+    ]);
+    expect(d.styles.get('x')!.props.fill).toBe('#000'); // own style kept
+    expect(d.styles.get('band')!.props.stroke).toBe('none');
+    expect(r.src).toContain('src="decks/assets/logo.png"');
+    expect(parse(r.src, { layout: 'two' }).nodes.map((n) => n.id)).toEqual(['band', 'logo', 'left']);
+  });
+  it('makes a new deck in the look of another one', () => {
+    const s = slideFromDeck('新しい発表', slideTemplate('元'), 'a.charpie', 'b.charpie');
+    const d = parse(s);
+    expect(d.diagnostics).toEqual([]);
+    expect(d.deck!.layouts.map((l) => l.name)).toEqual(['default', 'content']);
+    expect(parse(s, { page: 'p1' }).nodeMap.get('title')!.label).toBe('新しい発表');
+    expect(rebasePath('../x.png', 'a/b/c.charpie', 'a/d.charpie')).toBe('x.png');
+    expect(rebasePath('img/x.png', 'c.charpie', 'sub/d.charpie')).toBe('../img/x.png');
+  });
+});
+
+describe('layout import: same layouts', () => {
+  it('reuses a layout that is already here as written instead of copying it again', () => {
+    const base = slideTemplate('a');
+    const r = importLayouts(base, parse(base), base, ['content']);
+    expect(r.src).toBe(base);
+    expect(r.layouts).toEqual(['default', 'content']);
+    // a changed child is copied, its unchanged parent reused
+    const other = base.replace('slot  body list at (40, 132)', 'slot  body list at (40, 140)');
+    const r2 = importLayouts(base, parse(base), other, ['content']);
+    expect(parse(r2.src).deck!.layouts.map((l) => [l.name, l.extends])).toEqual([
+      ['default', undefined],
+      ['content', 'default'],
+      ['content2', 'default'],
+    ]);
+  });
+});
+
+describe('layout import: twice', () => {
+  it('does not copy a layout again after it was imported under another name', () => {
+    const other = slideTemplate('x').replace('size 1200x72 .title', 'size 1200x80 .title');
+    const mine = slideTemplate('y');
+    const once = importLayouts(mine, parse(mine), other, ['content']);
+    expect(once.renamed).toEqual({ default: 'default2', content: 'content2' });
+    const twice = importLayouts(once.src, parse(once.src), other, ['content']);
+    expect(twice.src).toBe(once.src);
+    expect(twice.layouts).toEqual(['default2', 'content2']);
+  });
+});

@@ -3,7 +3,7 @@ import type { Layout } from './layout';
 import { exportSvg } from './exportFormats';
 import { embeddedImages } from './images';
 
-export { exportSvg, exportTikz } from './exportFormats';
+export { exportSvg, exportTikz, exportTikzDeck } from './exportFormats';
 
 /** SVG with the pictures of image shapes embedded, so the file stands alone. */
 export async function exportSvgStandalone(layout: Layout, bg: string | null = '#ffffff'): Promise<string> {

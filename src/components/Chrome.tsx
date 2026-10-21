@@ -30,8 +30,10 @@ import { IGNORE_NAME, ISSUE_LABEL } from '../check/check';
 import { ignoreIssue, unignoreIssue } from '../actions';
 import { autoFix } from '../check/resolve';
 import { canvasMeasure } from '../text/fit';
-import { download, exportPng, exportSvgStandalone, exportTikz, openFile, printPages, resetFileHandle, saveFile } from '../export';
-import { createFile, flush, openFile as openRemoteFile, revert, save as saveRemote } from '../remote';
+import { download, exportPng, exportSvgStandalone, exportTikz, exportTikzDeck, openFile, printPages, resetFileHandle, saveFile } from '../export';
+import { flush, revert, save as saveRemote } from '../remote';
+import { askConfirm } from './Dialog';
+import { newFileDialog } from './NewFile';
 import { Bot, Ellipsis, EyeOff, Radio } from 'lucide-react';
 import { useMobile } from '../useMobile';
 import { fitView } from './Canvas';
@@ -40,6 +42,12 @@ import { FileDown, LayoutGrid, Presentation } from 'lucide-react';
 import { parse } from '../dsl/parse';
 import { toDeck } from '../dsl/patch';
 import { computeLayout } from '../layout';
+
+/** The page shown, for file names (`intro`, or `layout-base`). */
+function pageSuffix(): string {
+  const v = useStore.getState().doc.deck?.view;
+  return !v ? '' : 'page' in v ? v.page : `layout-${v.layout}`;
+}
 
 export function BrandMark() {
   return (
@@ -178,6 +186,7 @@ export function TopBar({ onHelp }: { onHelp: () => void }) {
           <div className="file-split">
             <button className="btn" title="ファイル一覧（Ctrl+P）" onClick={() => (close(), useGallery.getState().setOpen(true))}>
               <LayoutGrid size={14} /> <span className="mono-name">{workspace.file ?? 'ファイル'}</span>
+              {workspace.file && <span className={'kind-chip' + (isDeck ? ' slides' : '')}>{isDeck ? 'スライド' : '図'}</span>}
             </button>
             <button className="btn" title="その他" onClick={() => setMenu(menu === 'file' ? null : 'file')}>
               <ChevronDown size={13} />
@@ -195,15 +204,12 @@ export function TopBar({ onHelp }: { onHelp: () => void }) {
             </div>
             <button
               className="menu-item"
-              onClick={async () => {
+              onClick={() => {
                 close();
-                const name = prompt('新しいファイル名（.charpie）', 'untitled');
-                if (!name) return;
-                const f = await createFile(name);
-                if (f) openRemoteFile(f);
+                newFileDialog();
               }}
             >
-              <FilePlus size={15} /> 新規ファイル…
+              <FilePlus size={15} /> 新規（図 / スライド）…
             </button>
             <div className="menu-sep" />
             <button className="menu-item" onClick={() => s.setAutoSave(!autoSave)}>
@@ -212,9 +218,15 @@ export function TopBar({ onHelp }: { onHelp: () => void }) {
             {workspace.dirty && !autoSave && (
               <button
                 className="menu-item"
-                onClick={() => {
+                onClick={async () => {
                   close();
-                  if (confirm(workspace.conflict ? '未保存の変更を捨てて、外部で更新された版を読み込みますか？（Ctrl+Z で戻せます）' : '未保存の変更を破棄しますか？（Ctrl+Z で戻せます）')) revert();
+                  const ok = await askConfirm({
+                    title: workspace.conflict ? '外部の版を読み込みますか？' : '未保存の変更を破棄しますか？',
+                    message: workspace.conflict ? '未保存の変更を捨てて、外部で更新された版を読み込みます。Ctrl+Z で戻せます。' : 'Ctrl+Z で戻せます。',
+                    ok: workspace.conflict ? '読み込む' : '破棄',
+                    danger: true,
+                  });
+                  if (ok) revert();
                 }}
               >
                 <RotateCcw size={15} /> {workspace.conflict ? '外部の版を読み込む（未保存の変更を破棄）' : '未保存の変更を破棄'}
@@ -235,14 +247,12 @@ export function TopBar({ onHelp }: { onHelp: () => void }) {
           <div className="float menu" style={{ left: 0, right: 'auto' }}>
             <button
               className="menu-item"
-              onClick={() => {
+              onClick={async () => {
                 close();
-                s.apply(() => '# 新しい図\nset gap=12 grid=10\n\n');
-                s.setFileName('untitled.charpie');
-                resetFileHandle();
+                if (await newFileDialog()) resetFileHandle();
               }}
             >
-              <FilePlus size={15} /> 新規
+              <FilePlus size={15} /> 新規（図 / スライド）…
             </button>
             <button
               className="menu-item"
@@ -369,7 +379,7 @@ export function TopBar({ onHelp }: { onHelp: () => void }) {
                     await printPages(layouts, base);
                   }}
                 >
-                  <FileDown size={15} /> PDF（全ページ・印刷から保存）
+                  <FileDown size={15} /> PDF（全ページ）<span className="hint">印刷から保存</span>
                 </button>
               </>
             ) : (
@@ -411,24 +421,37 @@ export function TopBar({ onHelp }: { onHelp: () => void }) {
                 copyText(exportTikz(useStore.getState().layout), 'TikZ');
               }}
             >
-              <FileCode size={15} /> TikZ をコピー
+              <FileCode size={15} /> TikZ をコピー{isDeck && <span className="hint">このページ</span>}
             </button>
             <button
               className="menu-item"
               onClick={() => {
                 close();
-                download(`${base}.tex`, exportTikz(useStore.getState().layout));
+                download(`${base}${isDeck ? '-' + pageSuffix() : ''}.tex`, exportTikz(useStore.getState().layout));
               }}
             >
-              <FileCode size={15} /> TikZ (.tex) をダウンロード
+              <FileCode size={15} /> TikZ (.tex) をダウンロード{isDeck && <span className="hint">このページ</span>}
             </button>
+            {isDeck && (
+              <button
+                className="menu-item"
+                onClick={() => {
+                  close();
+                  const st = useStore.getState();
+                  download(`${base}.tex`, exportTikzDeck((st.doc.deck?.pages ?? []).map((p) => computeLayout(parse(st.src, { page: p.id }), canvasMeasure))));
+                  st.notify('全ページを 1 つの LaTeX 文書にしました（lualatex でコンパイル）', 'ok');
+                }}
+              >
+                <FileCode size={15} /> TikZ 全ページ<span className="hint">LaTeX 文書</span>
+              </button>
+            )}
             <div className="menu-sep" />
-            <div className="menu-label">画像</div>
+            <div className="menu-label">{isDeck ? '画像（表示中のページ）' : '画像'}</div>
             <button
               className="menu-item"
               onClick={async () => {
                 close();
-                download(`${base}.svg`, await exportSvgStandalone(useStore.getState().layout), 'image/svg+xml');
+                download(`${base}${isDeck ? "-" + pageSuffix() : ""}.svg`, await exportSvgStandalone(useStore.getState().layout), 'image/svg+xml');
               }}
             >
               <Image size={15} /> SVG
@@ -437,7 +460,7 @@ export function TopBar({ onHelp }: { onHelp: () => void }) {
               className="menu-item"
               onClick={async () => {
                 close();
-                download(`${base}-transparent.svg`, await exportSvgStandalone(useStore.getState().layout, null), 'image/svg+xml');
+                download(`${base}${isDeck ? "-" + pageSuffix() : ""}-transparent.svg`, await exportSvgStandalone(useStore.getState().layout, null), 'image/svg+xml');
               }}
             >
               <Image size={15} /> SVG（背景なし）
@@ -447,7 +470,7 @@ export function TopBar({ onHelp }: { onHelp: () => void }) {
               onClick={async () => {
                 close();
                 try {
-                  download(`${base}.png`, await exportPng(useStore.getState().layout, 2));
+                  download(`${base}${isDeck ? "-" + pageSuffix() : ""}.png`, await exportPng(useStore.getState().layout, 2));
                 } catch (e) {
                   s.notify((e as Error).message, 'warn');
                 }

@@ -526,3 +526,132 @@ export function addLayout(src: string, doc: Doc, name: string, parent?: string, 
   if (first) return src.slice(0, first.lines.from) + text + '\n' + src.slice(first.lines.from);
   return insertBlock(src, text);
 }
+
+// ───────────────────────── importing layouts ─────────────────────────
+
+/** Source text of a `style` (single- or multi-line) starting at its 0-based line. */
+function styleText(src: string, line: number): string {
+  const lines = src.split('\n');
+  const out: string[] = [];
+  for (let i = line; i < lines.length; i++) {
+    out.push(lines[i].trim() ? lines[i].replace(/^\s+/, '') : lines[i]);
+    if (lines[i].includes('}')) break;
+  }
+  return out.join('\n');
+}
+
+export interface ImportResult {
+  src: string;
+  /** imported layouts, as named in this file */
+  layouts: string[];
+  /** layouts renamed because the name was taken here */
+  renamed: Record<string, string>;
+  /** styles copied because the layouts use them and this file has none of that name */
+  styles: string[];
+}
+
+/**
+ * Copy layouts from another deck: with the layouts they extend, and the styles they use that this file
+ * lacks. Names taken here get a number. `rebase` rewrites `src=` paths (the other file may sit elsewhere).
+ */
+export function importLayouts(src: string, doc: Doc, other: string, names: string[], rebase?: (path: string) => string): ImportResult {
+  const od = parse(other);
+  const deck = od.deck;
+  const none = { src, layouts: [], renamed: {}, styles: [] };
+  if (!deck) return none;
+  const want: string[] = [];
+  const add = (n: string) => {
+    const l = deck.layouts.find((x) => x.name === n);
+    if (!l || want.includes(n)) return;
+    if (l.extends) add(l.extends);
+    want.push(n);
+  };
+  names.forEach(add);
+  if (!want.length) return none;
+
+  // a layout this file already has (under any name), written the same way and on the same parent, is reused
+  const body = (text: string) => text.split('\n').slice(1).map((l) => l.trim()).filter(Boolean).join('\n');
+  const mine = doc.deck?.layouts ?? [];
+  const map: Record<string, string> = {};
+  const taken = new Set(mine.map((l) => l.name));
+  const fresh: string[] = [];
+  for (const n of want) {
+    const l = deck.layouts.find((x) => x.name === n)!;
+    const parent = l.extends && map[l.extends];
+    const twin = mine.find((m) => m.extends === parent && body(blockText(src, m.lines)) === body(blockText(other, l.lines)));
+    if (twin) {
+      map[n] = twin.name;
+      continue;
+    }
+    let m = n;
+    for (let i = 2; taken.has(m); i++) m = `${n}${i}`;
+    taken.add(m);
+    map[n] = m;
+    fresh.push(n);
+  }
+  const renamed = Object.fromEntries(fresh.filter((n) => map[n] !== n).map((n) => [n, map[n]]));
+  if (!fresh.length) return { src, layouts: want.map((n) => map[n]), renamed: {}, styles: [] };
+  const blocks = fresh.map((n) => {
+    const l = deck.layouts.find((x) => x.name === n)!;
+    const parent = l.extends ? map[l.extends] : undefined;
+    let text = blockText(other, l.lines);
+    text = text.replace(other.slice(l.header.from, l.header.to), `layout ${map[n]}${parent ? ` extends ${parent}` : ''}`);
+    if (rebase) text = text.replace(/\bsrc=("(?:[^"\\]|\\.)*"|[^\s"]+)/g, (_, v: string) => `src=${fmtValue(rebase(v.startsWith('"') ? v.slice(1, -1) : v))}`);
+    return text.replace(/^[ \t]+(?=layout )/, '');
+  });
+
+  // styles the layouts use (on their own shapes, slots and arrows) that this file does not define
+  const used = new Set<string>();
+  for (const n of fresh) {
+    const ld = parse(other, { layout: n });
+    for (const x of [...ld.nodes, ...ld.edges]) if (!x.locked) for (const c of x.classes) used.add(c);
+  }
+  const styles = [...used].filter((c) => !doc.styles.has(c) && od.styles.has(c));
+
+  // layouts go after this file's layouts (or before its first page)
+  let out = src;
+  const lastLayout = doc.deck?.layouts[doc.deck.layouts.length - 1];
+  const firstPage = doc.deck?.pages[0];
+  const text = blocks.join('\n');
+  if (lastLayout) out = insertBlock(out, text, lastLayout.lines);
+  else if (firstPage) out = out.slice(0, firstPage.lines.from) + text + '\n' + out.slice(firstPage.lines.from);
+  else out = insertBlock(out, text);
+
+  // styles go after this file's last style (or its `set` line, or its leading comments)
+  if (styles.length) {
+    const lines = out.split('\n');
+    const d = parse(out);
+    const lastStyle = [...d.styles.values()].sort((a, b) => b.line - a.line)[0];
+    let at: number;
+    if (lastStyle) {
+      at = lastStyle.line;
+      while (at < lines.length && !lines[at].includes('}')) at++;
+      at++;
+    } else if (d.settingsSpan) at = out.slice(0, d.settingsSpan.from).split('\n').length;
+    else {
+      at = 0;
+      while (at < lines.length && /^\s*(#|\/\/)/.test(lines[at])) at++;
+    }
+    lines.splice(at, 0, ...styles.map((c) => styleText(other, od.styles.get(c)!.line)));
+    out = lines.join('\n');
+  }
+  return { src: out, layouts: want.map((n) => map[n]), renamed, styles };
+}
+
+/** `rel` (relative to `fromFile`) as seen from `toFile`; both are workspace paths like `a/b.charpie`. */
+export function rebasePath(rel: string, fromFile: string, toFile: string): string {
+  if (/^(https?:|data:|\/)/.test(rel)) return rel;
+  const norm = (parts: string[]) => {
+    const out: string[] = [];
+    for (const p of parts) {
+      if (p === '..' && out.length && out[out.length - 1] !== '..') out.pop();
+      else if (p && p !== '.') out.push(p);
+    }
+    return out;
+  };
+  const target = norm([...fromFile.split('/').slice(0, -1), ...rel.split('/')]);
+  const base = norm(toFile.split('/').slice(0, -1));
+  let i = 0;
+  while (i < base.length && i < target.length - 1 && base[i] === target[i]) i++;
+  return [...base.slice(i).map(() => '..'), ...target.slice(i)].join('/');
+}

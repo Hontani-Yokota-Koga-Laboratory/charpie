@@ -10,6 +10,7 @@ import { useStore } from './store';
 import { hashText } from './hash';
 import { issuesOut } from './check/report';
 import { embedChanged } from './embeds';
+import { askConfirm } from './components/Dialog';
 import { unionBox } from './geom/geom';
 
 let synced = ''; // hash of the text last known to equal the file on disk
@@ -76,7 +77,7 @@ export async function createFile(name: string, src?: string): Promise<string | n
 
 export async function openFile(file: string) {
   if (useStore.getState().workspace.dirty) {
-    if (!confirm('未保存の変更があります。保存してから切り替えますか？\n（キャンセルで切り替えを中止）')) return;
+    if (!(await askConfirm({ title: '未保存の変更があります', message: '保存してから切り替えますか？（キャンセルで切り替えを中止）', ok: '保存して切り替え' }))) return;
     if (!(await save())) return;
   }
   await flush();
@@ -168,7 +169,13 @@ async function push(manual = false): Promise<boolean> {
   let base = synced;
   if (manual && incoming) {
     // the file changed on disk after our edits began
-    if (!confirm(`${file} はこの画面の外（Claude Code など）でも変更されています。\nこの画面の内容で上書きしますか？\n（キャンセルで保存を中止。「外部の版を読み込む」で向こうを採用できます）`)) return false;
+    const ok = await askConfirm({
+      title: 'ファイルが外部でも変更されています',
+      message: `${file} はこの画面の外（Claude Code など）でも変更されています。この画面の内容で上書きしますか？（キャンセルで保存を中止。メニューの「外部の版を読み込む」で向こうを採用できます）`,
+      ok: '上書きする',
+      danger: true,
+    });
+    if (!ok) return false;
     base = incoming.hash;
   }
   s.setWorkspace({ status: 'saving' });

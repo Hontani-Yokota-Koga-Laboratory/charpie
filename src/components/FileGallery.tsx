@@ -6,9 +6,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { create } from 'zustand';
-import { ChevronDown, ChevronLeft, ChevronRight, FilePlus, Folder, FolderOpen, LayoutGrid, Maximize2, Search, TriangleAlert, X } from 'lucide-react';
+import { ChevronDown, ChevronLeft, ChevronRight, FilePlus, Folder, FolderOpen, LayoutGrid, Maximize2, Presentation, Search, Shapes, TriangleAlert, X } from 'lucide-react';
 import { useStore } from '../store';
-import { createFile, openFile } from '../remote';
+import { openFile } from '../remote';
+import { newFileDialog } from './NewFile';
 import './FileGallery.css';
 
 export const useGallery = create<{ open: boolean; setOpen(open: boolean): void }>((set) => ({
@@ -23,6 +24,8 @@ interface FileInfo {
   nodes: number;
   edges: number;
   errors: number;
+  /** pages of a slide deck; null for a diagram */
+  pages: number | null;
 }
 
 // ── per-file info, kept across openings; a change on disk drops the entry
@@ -35,8 +38,8 @@ async function loadInfo(file: string) {
   try {
     const r = await fetch(`/api/doc?file=${encodeURIComponent(file)}`);
     if (!r.ok) return;
-    const d = (await r.json()) as { hash: string; src: string; nodes: unknown[]; edges: unknown[]; issues: { severity: string }[] };
-    const info: FileInfo = { hash: d.hash, src: d.src, title: titleOf(d.src), nodes: d.nodes.length, edges: d.edges.length, errors: d.issues.filter((i) => i.severity === 'error').length };
+    const d = (await r.json()) as { hash: string; src: string; nodes: unknown[]; edges: unknown[]; issues: { severity: string }[]; deck?: { pages: unknown[] } };
+    const info: FileInfo = { hash: d.hash, src: d.src, title: titleOf(d.src), nodes: d.nodes.length, edges: d.edges.length, errors: d.issues.filter((i) => i.severity === 'error').length, pages: d.deck ? d.deck.pages.length : null };
     infoStore.setState((s) => {
       const stale = { ...s.stale };
       delete stale[file];
@@ -79,6 +82,9 @@ const RECENT = 'charpie:recentFiles';
 const COLLAPSED = 'charpie:gallery:collapsed';
 const CARD = 'charpie:gallery:card';
 const SORT = 'charpie:gallery:sort';
+const KIND = 'charpie:gallery:kind';
+
+type KindFilter = 'all' | 'diagram' | 'slides';
 
 function readJson<T>(key: string, fallback: T): T {
   try {
@@ -200,6 +206,8 @@ function GalleryModal({ onClose }: { onClose: () => void }) {
   const { info, stale } = infoStore();
   const [query, setQuery] = useState('');
   const [sort, setSortState] = useState<'name' | 'recent'>(() => readJson(SORT, 'recent'));
+  const [kind, setKindState] = useState<KindFilter>(() => readJson(KIND, 'all'));
+  const setKind = (v: KindFilter) => (setKindState(v), writeJson(KIND, v));
   const [card, setCardState] = useState<number>(() => readJson(CARD, 300));
   const [collapsed, setCollapsedState] = useState<Set<string>>(() => new Set(readJson<string[]>(COLLAPSED, [])));
   const [preview, setPreview] = useState<string | null>(null);
@@ -229,7 +237,10 @@ function GalleryModal({ onClose }: { onClose: () => void }) {
   }, []);
 
   const q = query.trim().toLowerCase();
+  const isKind = (f: string, k: KindFilter) => k === 'all' || (!!info[f] && (info[f].pages !== null) === (k === 'slides'));
+  const count = (k: KindFilter) => files.filter((f) => isKind(f, k)).length;
   const matches = (f: string) => {
+    if (!isKind(f, kind)) return false;
     if (!q) return true;
     const i = info[f];
     return q.split(/\s+/).every((w) => f.toLowerCase().includes(w) || (!!i && (i.title.toLowerCase().includes(w) || i.src.toLowerCase().includes(w))));
@@ -245,10 +256,8 @@ function GalleryModal({ onClose }: { onClose: () => void }) {
   };
 
   const newFile = async (dir: string) => {
-    const name = prompt(dir ? `新しいファイル名（${dir}/ の中）\n「sub/名前」でフォルダも作れます` : '新しいファイル名\n「フォルダ/名前」でフォルダの中に作れます', 'untitled');
-    if (!name) return;
-    const f = await createFile(dir ? `${dir}/${name}` : name);
-    if (f) go(f);
+    onClose();
+    await newFileDialog(dir, kind === 'slides' ? 'slides' : kind === 'diagram' ? 'diagram' : undefined);
   };
 
   const onKeyDown = (e: React.KeyboardEvent) => {
@@ -346,6 +355,11 @@ function GalleryModal({ onClose }: { onClose: () => void }) {
             <Maximize2 size={14} />
           </button>
           <div className="gal-badges">
+            {i && i.pages !== null && (
+              <span className="gal-badge slides">
+                <Presentation size={11} /> スライド
+              </span>
+            )}
             {current && <span className="gal-badge accent">編集中</span>}
             {current && workspace.dirty && <span className="gal-badge warn">未保存</span>}
             {!!i?.errors && (
@@ -359,7 +373,7 @@ function GalleryModal({ onClose }: { onClose: () => void }) {
           <div className="gal-name">{baseName(f)}</div>
           <div className="gal-title">{i?.title || ' '}</div>
           <div className="gal-sub">
-            {i ? `図形 ${i.nodes} · 矢印 ${i.edges}` : '読み込み中…'}
+            {!i ? '読み込み中…' : i.pages !== null ? `${i.pages} ページ` : `図形 ${i.nodes} · 矢印 ${i.edges}`}
             {recent[f] && <span>{ago(recent[f])}</span>}
           </div>
         </div>
@@ -432,6 +446,19 @@ function GalleryModal({ onClose }: { onClose: () => void }) {
           </label>
           <div className="gal-tools">
             <div className="gal-seg">
+              {(
+                [
+                  ['all', 'すべて', null],
+                  ['diagram', '図', <Shapes key="d" size={13} />],
+                  ['slides', 'スライド', <Presentation key="s" size={13} />],
+                ] as [KindFilter, string, JSX.Element | null][]
+              ).map(([k, label, icon]) => (
+                <button key={k} className={kind === k ? 'on' : ''} onClick={() => setKind(k)}>
+                  {icon} {label} <span className="gal-count">{count(k)}</span>
+                </button>
+              ))}
+            </div>
+            <div className="gal-seg">
               <button className={sort === 'name' ? 'on' : ''} onClick={() => setSort('name')}>
                 名前
               </button>
@@ -450,7 +477,18 @@ function GalleryModal({ onClose }: { onClose: () => void }) {
         </header>
 
         <div className="gal-body" ref={bodyRef}>
-          {visible.length === 0 ? <div className="gal-empty">{q ? `「${query}」に一致するファイルはありません` : '.charpie ファイルがありません'}</div> : renderDir(tree)}
+          {visible.length === 0 ? (
+            <div className="gal-empty">
+              {q ? `「${query}」に一致するファイルはありません` : kind === 'slides' ? 'スライドはまだありません' : kind === 'diagram' ? '図はまだありません' : '.charpie ファイルがありません'}
+              {!q && kind !== 'all' && (
+                <button className="btn" style={{ marginTop: 12 }} onClick={() => newFile('')}>
+                  <FilePlus size={14} /> {kind === 'slides' ? 'スライドを作る' : '図を作る'}
+                </button>
+              )}
+            </div>
+          ) : (
+            renderDir(tree)
+          )}
         </div>
 
         <footer className="gal-foot">

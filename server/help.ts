@@ -15,6 +15,7 @@ GET  /api/measure?file=NAME             per shape: font size, text block vs box 
 GET  /api/selection                     what the user has selected in the browser right now
                                         (unsaved: true = the browser holds edits not yet saved to disk)
 GET  /api/export?file=NAME&format=svg   or format=tikz (svg embeds the pictures of image shapes)
+                                        decks: one page (&page=ID); format=tikz&all=1 = every page as one LaTeX document
 GET  /api/asset?file=NAME&src=PATH      a picture referenced by an image shape (src relative to the .charpie)
 \`file\` may be omitted: defaults to the file open in the browser (or the only file).
 Decks (files with page / layout blocks): add \`&page=ID\` or \`&layout=NAME\` to doc / measure / export / ops
