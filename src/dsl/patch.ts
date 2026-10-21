@@ -4,7 +4,7 @@
  * single source of truth and diffs stay small.
  */
 import { dedent, endText, parse, viewOf } from './parse';
-import { POINT_END, type ArrowOp, type Doc, type EdgeDef, type NodeDef, type Port, type ShapeKind, type Span } from './types';
+import { DEFAULT_CANVAS, POINT_END, type ArrowOp, type Doc, type EdgeDef, type NodeDef, type Port, type ShapeKind, type Span } from './types';
 
 export interface Edit {
   from: number;
@@ -411,10 +411,12 @@ export interface PageHeader {
   id: string;
   label?: string;
   layout?: string;
+  /** `number=skip`: the page isn't counted in `{page}` / `{pages}` */
+  skip?: boolean;
 }
 
 export function pageHeader(p: PageHeader): string {
-  return `page ${p.id}${p.label ? ' ' + quote(p.label) : ''}${p.layout ? ` layout=${p.layout}` : ''}`;
+  return `page ${p.id}${p.label ? ' ' + quote(p.label) : ''}${p.layout ? ` layout=${p.layout}` : ''}${p.skip ? ' number=skip' : ''}`;
 }
 
 /** A fresh page id: p1, p2, … not used yet. */
@@ -513,8 +515,47 @@ export function setPageHeader(src: string, doc: Doc, id: string, h: Partial<Page
   const p = doc.deck?.pages.find((x) => x.id === id);
   if (!p) return src;
   const written = /\slayout=/.test(src.slice(p.header.from, p.header.to));
-  const next: PageHeader = { id: h.id ?? p.id, label: h.label ?? p.label, layout: 'layout' in h ? h.layout : written ? p.layout : undefined };
+  const next: PageHeader = { id: h.id ?? p.id, label: h.label ?? p.label, layout: 'layout' in h ? h.layout : written ? p.layout : undefined, skip: 'skip' in h ? h.skip : p.skip };
   return applyEdits(src, [{ ...p.header, insert: pageHeader(next) }]);
+}
+
+/** Show / hide one of the layout's shapes (or slots) on a page: adds `hide ID` or takes the id out of its `hide` lines. */
+export function setLayoutShapeHidden(src: string, doc: Doc, pageId: string, id: string, hidden: boolean): string {
+  const p = doc.deck?.pages.find((x) => x.id === pageId);
+  if (!p) return src;
+  const mine = p.hides.filter((h) => h.id === id);
+  if (hidden) {
+    if (mine.length) return src;
+    const last = p.hides[p.hides.length - 1];
+    // join the page's last `hide` line, else a new line at the top of the page
+    if (last) return applyEdits(src, [{ from: last.span.to, to: last.span.to, insert: ' ' + id }]);
+    const at = p.lines.from + src.slice(p.lines.from).indexOf('\n') + 1;
+    return src.slice(0, at) + `${p.indent}hide ${id}\n` + src.slice(at);
+  }
+  const edits: Edit[] = [];
+  for (const h of mine) {
+    const others = p.hides.filter((x) => x.lines.from === h.lines.from && x.id !== id);
+    if (!others.length) {
+      if (!edits.some((e) => e.from === h.lines.from)) edits.push({ ...h.lines, insert: '' });
+      continue;
+    }
+    // the separator (`, ` or spaces) goes with it: the one before it, or after it for the first id
+    let { from, to } = h.span;
+    if (/hide[ \t,]*$/.test(src.slice(h.lines.from, from))) while (/[ \t,]/.test(src[to] ?? '')) to++;
+    else while (/[ \t,]/.test(src[from - 1])) from--;
+    edits.push({ from, to, insert: '' });
+  }
+  return applyEdits(src, edits);
+}
+
+/** A page number (`{page} / {pages}`) in the bottom right of the layout on the canvas. */
+export function addPageNumber(src: string, doc: Doc): { src: string; id: string } {
+  const c = doc.canvas ?? DEFAULT_CANVAS;
+  const id = doc.nodeMap.has('pageno') ? uniqueId(doc, 'pageno') : 'pageno';
+  const w = 140;
+  const h = 32;
+  const node: NewNode = { kind: 'text', id, label: '{page} / {pages}', x: c.w - 40 - w, y: c.h - 16 - h, w, h, attrs: { font: '16', halign: 'right', text: '#64748b' } };
+  return { src: addNodes(src, doc, [node]), id };
 }
 
 /** Add a layout block before the first page (or at EOF). */

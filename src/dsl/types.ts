@@ -150,6 +150,10 @@ export interface PageInfo extends BlockInfo {
   label: string;
   /** resolved layout name (explicit `layout=`, else `default` when it exists) */
   layout?: string;
+  /** `number=skip`: not counted in `{page}` / `{pages}` */
+  skip?: boolean;
+  /** `hide ID ...` in this page: each id, and the line of its statement */
+  hides: { id: string; span: Span; lines: Span }[];
 }
 
 export interface LayoutInfo extends BlockInfo {
@@ -167,6 +171,8 @@ export interface DeckInfo {
   block?: PageInfo | LayoutInfo;
   /** page view: slots of the layout the page doesn't fill yet (editor-only hints) */
   placeholders: NodeDef[];
+  /** page view: the layout's shapes and slots, and whether this page hides them */
+  layoutShapes?: { id: string; kind: string; label: string; slot?: boolean; hidden: boolean }[];
 }
 
 export const DEFAULT_CANVAS = { w: 1280, h: 720 };

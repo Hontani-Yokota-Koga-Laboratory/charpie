@@ -3,9 +3,9 @@
  * the layout-edit banner and the full-screen slide show.
  */
 import { memo, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Copy, Ellipsis, LayoutTemplate, Play, Plus, Trash2, X } from 'lucide-react';
+import { ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Copy, Ellipsis, Hash, LayoutTemplate, Play, Plus, Trash2, X } from 'lucide-react';
 import { parse } from '../dsl/parse';
-import { addPage, duplicatePage, movePage, removePage, setPageHeader, uniquePageId } from '../dsl/patch';
+import { addPage, addPageNumber, duplicatePage, movePage, removePage, setPageHeader, uniquePageId } from '../dsl/patch';
 import { askConfirm } from './Dialog';
 import { layoutDialog } from './NewFile';
 import { sameView, type View } from '../dsl/types';
@@ -333,16 +333,36 @@ function MobilePages({ onClose }: { onClose: () => void }) {
 /** Shown while a layout is on the canvas: edits there change every page that uses it. */
 export function LayoutBanner() {
   const deck = useStore((s) => s.doc.deck);
+  const src = useStore((s) => s.src);
   if (!deck || !('layout' in deck.view)) return null;
   const name = deck.view.layout;
   const users = deck.pages.filter((p) => p.layout === name || deck.layouts.some((l) => l.extends === name && l.name === p.layout));
   const back = users[0] ?? deck.pages[0];
+  // this layout or one it extends already shows `{page}`
+  const chain: string[] = [];
+  for (let l = deck.layouts.find((x) => x.name === name); l && !chain.includes(l.name); l = deck.layouts.find((x) => x.name === l!.extends)) chain.push(l.name);
+  const numbered = deck.layouts.some((l) => chain.includes(l.name) && src.slice(l.lines.from, l.lines.to).includes('{page}'));
+  const addNumber = () => {
+    const st = useStore.getState();
+    let id = '';
+    st.apply((src, doc) => {
+      const r = addPageNumber(src, doc);
+      id = r.id;
+      return r.src;
+    });
+    if (id) useStore.getState().select({ nodes: [id], edges: [] });
+  };
   return (
     <div className="float layout-banner">
       <LayoutTemplate size={15} />
       <span>
         レイアウト <b>{name}</b> を編集中 — {users.length} ページに反映されます
       </span>
+      {!numbered && (
+        <button className="btn tip tip-bottom" data-tip="右下に {page} / {pages} を置きます" onClick={addNumber}>
+          <Hash size={14} /> ページ番号を追加
+        </button>
+      )}
       {back && (
         <button className="btn" onClick={() => useStore.getState().setPage({ page: back.id })}>
           <ArrowLeft size={14} /> ページに戻る

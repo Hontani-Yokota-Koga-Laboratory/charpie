@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { parse, views } from './dsl/parse';
-import { addEdge, addNodes, removeItems, setNodeLabel, setNodesAttr, setNodesGeom } from './dsl/patch';
+import { addEdge, addNodes, addPageNumber, removeItems, setLayoutShapeHidden, setNodeLabel, setNodesAttr, setNodesGeom } from './dsl/patch';
 
 const DECK = `set canvas=1280x720 gap=12
 style title { font: 40; weight: bold; }
@@ -359,5 +359,58 @@ describe('layout import: twice', () => {
     const twice = importLayouts(once.src, parse(once.src), other, ['content']);
     expect(twice.src).toBe(once.src);
     expect(twice.layouts).toEqual(['default2', 'content2']);
+  });
+});
+
+describe('page numbers', () => {
+  const label = (src: string, page: string) => parse(src, { page }).nodeMap.get('pageno')?.label;
+
+  it('leaves number=skip pages out of {page} / {pages}', () => {
+    const src = DECK.replace('page intro "はじめに" layout=base {', 'page intro "はじめに" layout=base number=skip {');
+    expect(parse(src).deck!.pages.map((p) => !!p.skip)).toEqual([true, false, false]);
+    expect(label(src, 'intro')).toBe(' / 2');
+    expect(label(src, 'method')).toBe('1 / 2');
+    expect(label(src, 'empty')).toBe('2 / 2');
+    // a skipped page later in the deck keeps the number before it
+    const mid = DECK.replace('page method layout=two {', 'page method layout=two number=skip {');
+    expect(label(mid, 'method')).toBe('1 / 2');
+    expect(parse(mid).diagnostics).toEqual([]);
+    expect(parse(DECK.replace('layout=two {', 'layout=two number=no {')).diagnostics.map((d) => d.severity)).toEqual(['warning']);
+  });
+
+  it('toggles number=skip in the header', () => {
+    const on = setPageHeader(DECK, parse(DECK), 'method', { skip: true });
+    expect(on).toContain('page method layout=two number=skip {');
+    expect(setPageHeader(on, parse(on), 'method', { label: '提案' })).toContain('page method "提案" layout=two number=skip {');
+    expect(setPageHeader(on, parse(on), 'method', { skip: false })).toBe(DECK);
+  });
+
+  it('hides and shows layout shapes on a page', () => {
+    const d = parse(DECK, { page: 'intro' });
+    expect(d.deck!.layoutShapes!.map((s) => [s.id, s.hidden, !!s.slot])).toEqual([
+      ['footer', false, false],
+      ['pageno', false, false],
+      ['title', false, true],
+    ]);
+    const hid = setLayoutShapeHidden(DECK, d, 'intro', 'pageno', true);
+    expect(hid).toContain('page intro "はじめに" layout=base {\n  hide pageno\n  title "研究背景"');
+    expect(parse(hid, { page: 'intro' }).nodeMap.has('pageno')).toBe(false);
+    expect(setLayoutShapeHidden(hid, parse(hid), 'intro', 'pageno', false)).toBe(DECK);
+    // joins an existing hide line, and takes just that id out again
+    const two = setLayoutShapeHidden(DECK, parse(DECK), 'method', 'pageno', true);
+    expect(two).toContain('  hide footer pageno\n');
+    expect(setLayoutShapeHidden(two, parse(two), 'method', 'footer', false)).toContain('  hide pageno\n');
+    expect(setLayoutShapeHidden(two, parse(two), 'method', 'pageno', false)).toBe(DECK);
+    const comma = DECK.replace('hide footer', 'hide footer, pageno');
+    expect(setLayoutShapeHidden(comma, parse(comma), 'method', 'footer', false)).toContain('  hide pageno\n');
+    expect(setLayoutShapeHidden(comma, parse(comma), 'method', 'pageno', false)).toBe(DECK);
+  });
+
+  it('adds a page number to a layout', () => {
+    const src = DECK.replace(/\n  text  pageno .*\n/, '\n');
+    const { src: out, id } = addPageNumber(src, parse(src, { layout: 'base' }));
+    expect(id).toBe('pageno');
+    expect(out).toContain('  text pageno "{page} / {pages}" at (1100, 672) size 140x32 font=16 halign=right text=#64748b\n');
+    expect(parse(out, { page: 'method' }).nodeMap.get('pageno')!.label).toBe('2 / 3');
   });
 });

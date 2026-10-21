@@ -140,6 +140,8 @@ After writing, check "errors" — fix overlaps/overflow with {"op":"fix"} or by 
     rect a "自由配置" at (100, 200) size 200x80   # pages hold ordinary shapes and arrows too
     hide pageno                          # drop layout shapes on this page only
   }
+  page cover "表紙" number=skip { … }      # not counted: later pages number from 1, {pages} leaves it out
+                                         # (a skipped page shows the number before it; none before the first)
   Shape ids are per page. CLI: check / fix / measure go page by page;
   export --page ID (svg/png/tikz) · export -o deck.pdf (all pages)
 

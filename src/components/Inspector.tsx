@@ -27,7 +27,7 @@ import {
   FoldVertical,
 } from 'lucide-react';
 import { reparse, useStore, type State } from '../store';
-import { isValidId, pointText, renameNode, setEdgeEnds, setNodeBody, setPageHeader, setSetting, setEdgeLabel, setEdgesAttr, setEdgesOp, setNodeLabel, setNodesAttr, setNodesGeom, setNodesKind, type Geom } from '../dsl/patch';
+import { isValidId, pointText, renameNode, setEdgeEnds, setLayoutShapeHidden, setNodeBody, setPageHeader, setSetting, setEdgeLabel, setEdgesAttr, setEdgesOp, setNodeLabel, setNodesAttr, setNodesGeom, setNodesKind, type Geom } from '../dsl/patch';
 import { assetHref } from '../images';
 import { SHAPE_KINDS, type ArrowOp, type Doc, type ShapeKind } from '../dsl/types';
 import { align, distribute, matchSize, stack, type AlignMode } from '../ops/arrange';
@@ -720,6 +720,27 @@ function DeckSection({ doc }: { doc: Doc }) {
           ))}
         </select>
       </div>
+      <label className="toggle tip" style={{ display: 'flex', marginTop: 8 }} data-tip="number=skip：{page} / {pages} に数えません（表紙など）">
+        <input type="checkbox" checked={!!page.skip} onChange={(e) => header({ skip: e.target.checked })} />
+        ページ番号に数えない
+      </label>
+      {!!deck.layoutShapes?.length && (
+        <>
+          <div className="section-label" style={{ marginTop: 10 }}>
+            レイアウトの図形
+          </div>
+          {deck.layoutShapes.map((x) => (
+            <label key={x.id} className="toggle" style={{ display: 'flex', marginTop: 6 }} title={x.slot ? 'スロット' : x.kind}>
+              <input type="checkbox" checked={!x.hidden} onChange={(e) => edit((src, d) => setLayoutShapeHidden(src, d, page.id, x.id, !e.target.checked))} />
+              <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {x.id}
+                {x.label && x.label !== x.id && <span style={{ opacity: 0.6 }}> {x.label.replace(/\n/g, ' ')}</span>}
+              </span>
+            </label>
+          ))}
+          <div className="hint-text">チェックを外すとこのページだけ表示しません（hide）。</div>
+        </>
+      )}
       {deck.placeholders.length > 0 && <div className="hint-text">空のスロット（{deck.placeholders.map((p) => p.id).join(', ')}）はキャンバスの点線枠をダブルクリックで埋められます。</div>}
     </div>
   );

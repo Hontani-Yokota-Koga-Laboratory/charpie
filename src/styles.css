@@ -1993,6 +1993,18 @@ textarea.field {
 }
 .layout-banner > svg {
   color: var(--accent);
+  flex: none;
+}
+.layout-banner {
+  max-width: calc(100% - 24px);
+}
+.layout-banner > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.layout-banner > .btn {
+  flex: none;
 }
 
 .presenter {

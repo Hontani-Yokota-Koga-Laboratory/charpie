@@ -359,7 +359,7 @@ interface Parsed {
   edges: { def: EdgeDef; scope: number }[];
   slots: { def: NodeDef; scope: number }[];
   fills: (Fill & { scope: number })[];
-  hides: { id: string; span: Span; scope: number }[];
+  hides: { id: string; span: Span; scope: number; lines: Span }[];
   styles: Map<string, StyleDef>;
   settings: Settings;
   settingsSpan?: Span;
@@ -526,7 +526,9 @@ function parseFile(src: string): Parsed {
         const out = newOut();
         parseTail(ts, i, PAGE_ATTRS, out);
         if (P.pages.some((p) => p.id === id)) err(ts[1] ?? head, `ページ ID "${id}" が重複しています`, 'duplicate-id');
-        const page: PageInfo = { ...base, id, label: out.label?.value ?? '', layout: out.attrs.layout };
+        const num = out.attrs.number;
+        if (num !== undefined && num !== 'skip') err(out.attrList.find((a) => a.key === 'number')?.span ?? head, `number= に使えるのは skip だけです（"${num}"）`, undefined, 'warning');
+        const page: PageInfo = { ...base, id, label: out.label?.value ?? '', layout: out.attrs.layout, ...(num === 'skip' ? { skip: true } : {}), hides: [] };
         P.pages.push(page);
         P.info[bi] = page;
       } else {
@@ -680,7 +682,11 @@ function parseFile(src: string): Parsed {
     // page: hide ID ...
     if (blockType === 'page' && head.value === 'hide' && ts[1]?.type === 'ident' && !resolveKind(ts[1].value)) {
       for (const t of ts.slice(1)) {
-        if (t.type === 'ident') P.hides.push({ id: t.value, span: { from: t.from, to: t.to }, scope });
+        if (t.type === 'ident') {
+          const h = { id: t.value, span: { from: t.from, to: t.to }, scope, lines };
+          P.hides.push(h);
+          (P.info[scope] as PageInfo).hides.push({ id: h.id, span: h.span, lines });
+        }
         else if (!isPunct(t, ',')) err(t, `予期しないトークン "${src.slice(t.from, t.to)}"`);
       }
       continue;
@@ -734,7 +740,20 @@ function parseFile(src: string): Parsed {
   return P;
 }
 
-const PAGE_ATTRS = new Set(['layout']);
+const PAGE_ATTRS = new Set(['layout', 'number']);
+
+/**
+ * `{page}` / `{pages}` of each page: pages with `number=skip` aren't counted (they show the number of the
+ * page before them, or nothing before the first counted page).
+ */
+export function pageNumbers(pages: PageInfo[]): { page: string; pages: string }[] {
+  const total = String(pages.filter((p) => !p.skip).length);
+  let n = 0;
+  return pages.map((p) => {
+    if (!p.skip) n++;
+    return { page: n ? String(n) : '', pages: total };
+  });
+}
 
 /** Lines without their common indentation. */
 export function dedent(text: string): string {
@@ -842,7 +861,7 @@ function buildPage(P: Parsed, pi: number): Doc {
 
   const fills = P.fills.filter((f) => f.scope === scope);
   const title = fills.find((f) => f.def.slot === 'title')?.def.label ?? page.label;
-  const vars = { page: String(pi + 1), pages: String(P.pages.length), title };
+  const vars = { ...pageNumbers(P.pages)[pi], title };
 
   const fixed: NodeDef[] = [];
   const layoutIds = new Set<string>();
@@ -881,6 +900,10 @@ function buildPage(P: Parsed, pi: number): Doc {
     });
   }
   const placeholders = [...slots.values()].filter((s) => !filled.has(s.id) && !hidden.has(s.id)).map((s) => ({ ...s, locked: true }));
+  const layoutShapes = [
+    ...chainScopes.flatMap((s) => P.nodes.filter((n) => n.scope === s).map((n) => ({ id: n.def.id, kind: n.def.kind, label: lockNode(n.def, vars).label, hidden: hidden.has(n.def.id) }))),
+    ...[...slots.values()].map((s) => ({ id: s.id, kind: s.kind, label: s.label, slot: true, hidden: hidden.has(s.id) })),
+  ];
 
   // the page's statements in source order (fills keep their place among the page's own shapes)
   const own = sortByLine([...P.nodes.filter((n) => n.scope === scope), ...fills.filter((f) => filled.get(f.def.slot!)?.spans === f.def.spans).map((f) => ({ def: filled.get(f.def.slot!)! }))]).map((x) => x.def);
@@ -890,7 +913,7 @@ function buildPage(P: Parsed, pi: number): Doc {
   ];
   const doc = assemble(P, [...fixed, ...own], edges, extra);
   doc.canvas ??= DEFAULT_CANVAS;
-  doc.deck = { pages: P.pages, layouts: P.layouts, view: { page: page.id }, block: page, placeholders };
+  doc.deck = { pages: P.pages, layouts: P.layouts, view: { page: page.id }, block: page, placeholders, layoutShapes };
   return doc;
 }
 
@@ -903,7 +926,7 @@ function buildLayout(P: Parsed, li: number): Doc {
   const parents = chain.slice(0, -1).map(scopeOf);
   const ownSlots = new Set(P.slots.filter((s) => s.scope === own).map((s) => s.def.id));
   // page variables shown with their widest value (the last page number)
-  const n = String(Math.max(1, P.pages.length));
+  const n = String(Math.max(1, P.pages.filter((p) => !p.skip).length));
   const vars = { page: n, pages: n, title: P.slots.find((s) => s.def.id === 'title')?.def.label || 'タイトル' };
   const nodes: NodeDef[] = [];
   for (const s of parents) {
