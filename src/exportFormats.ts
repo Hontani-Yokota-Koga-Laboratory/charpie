@@ -2,7 +2,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { DiagramSvg, type ImageHref } from './components/Diagram';
 import { junctionStrokes } from './geom/geom';
-import { arrowHeadPath, lineAnchor, type Layout } from './layout';
+import { arrowHeadPath, isDiagramSrc, lineAnchor, type Layout } from './layout';
 import { LINE_HEIGHT } from './text/fit';
 import { splitMath } from './text/math';
 
@@ -13,7 +13,7 @@ export function exportSvg(layout: Layout, bg: string | null = '#ffffff', images?
 
 /** Distinct `src=` of the image shapes in a layout. */
 export function imageSources(layout: Layout): string[] {
-  return [...new Set(layout.nodes.flatMap((n) => (n.kind === 'image' && n.style.src ? [n.style.src] : [])))];
+  return [...new Set(layout.nodes.flatMap((n) => (n.kind === 'image' && n.style.src && !isDiagramSrc(n.style.src) ? [n.style.src] : [])))];
 }
 
 // ───────────── TikZ ─────────────
@@ -54,7 +54,8 @@ export function exportTikz(layout: Layout): string {
     else if (n.kind === 'rect' || n.kind === 'round' || n.kind === 'text') shape = `(${f(x)},${f(-y)}) rectangle (${f(x + w)},${f(-(y + h))})`;
     else shape = n.poly.map((p) => `(${f(p.x)},${f(-p.y)})`).join(' -- ') + ' -- cycle';
     body.push(`  % ${n.id}`);
-    if (n.kind === 'image' && s.src) {
+    if (n.kind === 'image' && isDiagramSrc(s.src)) body.push(`  % (embedded diagram ${s.src}: export it separately)`);
+    else if (n.kind === 'image' && s.src) {
       // path relative to the .charpie file; keep it next to the .tex (needs \usepackage{graphicx})
       const keep = s.fit === 'fill' ? '' : ', keepaspectratio';
       body.push(`  \\node[anchor=center, inner sep=0pt] at (${f(x + w / 2)},${f(-(y + h / 2))}) {\\includegraphics[width=${f(w)}pt, height=${f(h)}pt${keep}]{${s.src}}};`);

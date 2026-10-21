@@ -9,6 +9,8 @@ import type { View } from '../src/dsl/types';
 import { createApi } from './api';
 import { fontMeasure } from './measure';
 import { svgsToPdf, svgToPng } from './png';
+import { fileResolver } from './embed';
+import { setEmbedResolver } from '../src/layout';
 import { embedImages, Workspace } from './workspace';
 import { exportSvg, exportTikz, imageSources } from '../src/exportFormats';
 
@@ -55,7 +57,7 @@ function flag(args: string[], name: string): boolean {
 }
 
 function formatIssues(file: string, src: string) {
-  const { issues, ignored } = issuesAll(src, fontMeasure);
+  const { issues, ignored } = issuesAll(src, fontMeasure, path.resolve(file));
   const lines = issues.map((i) => `${file}:${i.line ?? 1}: ${i.severity}: ${i.view ? `(${i.view}) ` : ''}${i.message} [${i.code}]`);
   return { issues, lines, errors: issues.filter((i) => i.severity === 'error').length, ignored };
 }
@@ -107,7 +109,7 @@ async function serve(args: string[]) {
 /** Image shapes whose `src=` file does not exist (relative to the .charpie file). */
 function missingImages(file: string, src: string): string[] {
   const dir = path.dirname(path.resolve(file));
-  const nodes = views(src).flatMap((v) => analyze(src, fontMeasure, v).layout.nodes.filter((n) => !n.def.locked || (v && 'layout' in v)));
+  const nodes = views(src).flatMap((v) => analyze(src, fontMeasure, v, path.resolve(file)).layout.nodes.filter((n) => !n.def.locked || (v && 'layout' in v)));
   return [...new Map(nodes.map((n) => [n.def.spans.stmt.from, n])).values()]
     .filter((n) => n.kind === 'image')
     .filter((n) => !n.style.src || (!/^(https?:|data:)/.test(n.style.src) && !fs.existsSync(path.resolve(dir, n.style.src))))
@@ -152,7 +154,7 @@ function measureCmd(args: string[]) {
   for (const f of args) {
     const src = fs.readFileSync(f, 'utf8');
     const rows = (only ? [only] : views(src)).flatMap((v) => {
-      const a = analyze(src, fontMeasure, v);
+      const a = analyze(src, fontMeasure, v, path.resolve(f));
       return measureNodes(a, fontMeasure).filter((r) => !a.doc.nodeMap.get(r.id)?.locked);
     });
     if (asJson) {
@@ -180,7 +182,7 @@ async function exportCmd(args: string[]) {
   const src = fs.readFileSync(args[0], 'utf8');
   const dir = path.dirname(path.resolve(args[0]));
   const svgOf = (v: View | undefined) => {
-    const l = analyze(src, fontMeasure, v).layout;
+    const l = analyze(src, fontMeasure, v, path.resolve(args[0])).layout;
     const images = embedImages(dir, imageSources(l));
     return exportSvg(l, '#ffffff', (s) => images.get(s));
   };
@@ -192,7 +194,7 @@ async function exportCmd(args: string[]) {
     if (out) console.error(`${out}: ${pages.length} page${pages.length === 1 ? '' : 's'}`);
     return;
   }
-  const a = analyze(src, fontMeasure, view);
+  const a = analyze(src, fontMeasure, view, path.resolve(args[0]));
   const svg = () => svgOf(view);
   if (fmt === 'png') {
     const png = await svgToPng(svg(), Number(arg(args, '--scale') ?? 2) || 2);
@@ -230,6 +232,7 @@ async function hook() {
 
 async function main() {
   const [cmd, ...args] = process.argv.slice(2);
+  setEmbedResolver(fileResolver());
   try {
     switch (cmd) {
       case 'serve':

@@ -42,6 +42,8 @@ interface Thumb {
 /** Every page of the deck laid out (deferred: thumbnails may lag a keystroke behind). */
 function usePageLayouts(): Thumb[] {
   const src = useDeferredValue(useStore((s) => s.src));
+  // re-measured (fonts, embedded diagrams arriving) without a text change
+  const measured = useStore((s) => s.measured);
   return useMemo(() => {
     const d = parse(src);
     return (d.deck?.pages ?? []).map((p) => {
@@ -49,7 +51,8 @@ function usePageLayouts(): Thumb[] {
       const layout = computeLayout(doc, canvasMeasure);
       return { view: { page: p.id }, layout, errors: checkLayout(doc, layout).filter((i) => i.severity === 'error').length };
     });
-  }, [src]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [src, measured]);
 }
 
 export function PagesPanel() {
@@ -270,10 +273,12 @@ export function Presenter() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [presenting]);
 
+  const measured = useStore((s) => s.measured);
   const layout = useMemo(() => {
     const p = pages[index];
     return p ? computeLayout(parse(src, { page: p.id }), canvasMeasure) : null;
-  }, [pages, index, src]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pages, index, src, measured]);
 
   useEffect(() => {
     if (!presenting) return;

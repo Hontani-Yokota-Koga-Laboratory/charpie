@@ -5,6 +5,8 @@ import path from 'node:path';
 import { exportSvg, exportTikz, imageSources } from '../src/exportFormats';
 import { analyze, applyOps, issuesAll, measureNodes, summarize, viewParam, type IssueOut, type Op } from './core';
 import { views } from '../src/dsl/parse';
+import { setEmbedResolver } from '../src/layout';
+import { fileResolver } from './embed';
 import { helpText } from './help';
 import { fontMeasure } from './measure';
 import { embedImages, HttpError, IMAGE_MIME, type BrowserState, type Workspace } from './workspace';
@@ -56,7 +58,7 @@ function currentIssues(ws: Workspace, file: string, src: string): { source: 'bro
   const b = ws.browser;
   const deck = views(src)[0] !== undefined;
   if (!deck && b && b.file === file && b.hash === hashText(src) && Date.now() - b.at < 10 * 60_000) return { source: 'browser', issues: b.issues as IssueOut[] };
-  return { source: 'server', issues: issuesAll(src, fontMeasure).issues };
+  return { source: 'server', issues: issuesAll(src, fontMeasure, ws.resolve(file).abs).issues };
 }
 
 function writeResult(ws: Workspace, file: string, src: string, created: string[] = []) {
@@ -66,6 +68,8 @@ function writeResult(ws: Workspace, file: string, src: string, created: string[]
 }
 
 export function createApi(ws: Workspace) {
+  // embedded diagrams resolve inside the workspace only
+  setEmbedResolver(fileResolver(ws.root));
   return async (req: IncomingMessage, res: ServerResponse, next: Next) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
     if (!url.pathname.startsWith('/api')) return next();
@@ -102,7 +106,7 @@ export function createApi(ws: Workspace) {
         case 'GET /api/doc': {
           const file = ws.pick(q.get('file'));
           const src = ws.read(file);
-          const s = summarize(src, analyze(src, fontMeasure, viewParam(q)));
+          const s = summarize(src, analyze(src, fontMeasure, viewParam(q), ws.resolve(file).abs));
           const ci = currentIssues(ws, file, src);
           return send(res, 200, { file, hash: hashText(src), ...s, issues: ci.issues, issuesSource: ci.source });
         }
@@ -128,7 +132,7 @@ export function createApi(ws: Workspace) {
 
         case 'GET /api/measure': {
           const file = ws.pick(q.get('file'));
-          return send(res, 200, { file, nodes: measureNodes(analyze(ws.read(file), fontMeasure, viewParam(q)), fontMeasure) });
+          return send(res, 200, { file, nodes: measureNodes(analyze(ws.read(file), fontMeasure, viewParam(q), ws.resolve(file).abs), fontMeasure) });
         }
 
         case 'GET /api/issues': {
@@ -159,7 +163,7 @@ export function createApi(ws: Workspace) {
 
         case 'GET /api/export': {
           const file = ws.pick(q.get('file'));
-          const a = analyze(ws.read(file), fontMeasure, viewParam(q));
+          const a = analyze(ws.read(file), fontMeasure, viewParam(q), ws.resolve(file).abs);
           const fmt = q.get('format') ?? 'svg';
           if (fmt === 'svg') {
             const images = embedImages(path.dirname(ws.resolve(file).abs), imageSources(a.layout), ws.root);

@@ -9,6 +9,7 @@ import { extractText, pasteText, removeItems } from './dsl/patch';
 import { translate } from './ops/arrange';
 import { clearMeasureCache } from './text/fit';
 import { initRemote } from './remote';
+import { initEmbeds } from './embeds';
 import { useMobile } from './useMobile';
 import { MobileSheet } from './components/MobileSheet';
 import { deleteSelection, duplicateSelection } from './actions';
@@ -158,6 +159,7 @@ export function App() {
   }, [theme]);
 
   useEffect(() => {
+    initEmbeds();
     initRemote();
   }, []);
 

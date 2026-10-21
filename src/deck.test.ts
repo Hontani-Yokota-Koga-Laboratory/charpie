@@ -255,3 +255,35 @@ describe('table / list', () => {
     expect(d.nodes.map((n) => n.id)).toEqual(['body', 'x']);
   });
 });
+
+import { setEmbedResolver, withEmbedBase } from './layout';
+import { exportSvg } from './exportFormats';
+
+describe('embedded diagrams', () => {
+  it('lays out image src=x.charpie inline, relative to the embedding file, with a page', () => {
+    const files: Record<string, string> = {
+      'd/inner.charpie': 'rect a "内側" at (0, 0) size 100x50\nrect b at (200, 0) size 100x50\na -> b',
+      'd/deck.charpie': 'page one {\n  rect x "一枚目" at (0, 0) size 100x50\n}\npage two {\n  rect y "二枚目" at (0, 0) size 100x50\n}\n',
+    };
+    setEmbedResolver((src, base) => {
+      const key = (base ? base.split('/').slice(0, -1).join('/') + '/' : '') + src;
+      return files[key] !== undefined ? { text: files[key], base: key } : undefined;
+    });
+    try {
+      const doc = parse('image fig at (0, 0) size 600x100 src="inner.charpie"\nimage pg at (0, 200) size 128x72 src="deck.charpie#two"');
+      const l = withEmbedBase('d/top.charpie', () => computeLayout(doc, approxMeasureFn));
+      const fig = l.nodeMap.get('fig')!.embed!;
+      expect(fig.layout.nodes.map((n) => n.id)).toEqual(['a', 'b']);
+      expect(fig.scale).toBeGreaterThan(1);
+      expect(l.nodeMap.get('pg')!.embed!.layout.nodes.map((n) => n.id)).toEqual(['y']);
+      expect(l.nodeMap.get('pg')!.embed!.scale).toBeCloseTo(0.1);
+      const svg = exportSvg(l);
+      expect(svg).toContain('内側');
+      expect(svg).toContain('二枚目');
+      // unresolved: no embed, and not treated as a picture to embed
+      expect(computeLayout(parse('image z at (0, 0) size 10x10 src="nope.charpie"'), approxMeasureFn).nodeMap.get('z')!.embed).toBeUndefined();
+    } finally {
+      setEmbedResolver(undefined);
+    }
+  });
+});

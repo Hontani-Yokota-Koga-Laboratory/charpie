@@ -9,6 +9,7 @@
 import { useStore } from './store';
 import { hashText } from './hash';
 import { issuesOut } from './check/report';
+import { embedChanged } from './embeds';
 import { unionBox } from './geom/geom';
 
 let synced = ''; // hash of the text last known to equal the file on disk
@@ -270,6 +271,7 @@ function connectEvents() {
     switch (ev.type) {
       case 'change': {
         window.dispatchEvent(new CustomEvent('charpie:file-change', { detail: { file: ev.file } }));
+        embedChanged(ev.file, ev.src);
         if (ev.file !== s.workspace.file) return;
         if (ev.src === s.src) {
           synced = ev.hash;

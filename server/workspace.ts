@@ -126,7 +126,9 @@ export class Workspace {
   asset(file: string, src: string): { abs: string; type: string } {
     const dir = path.dirname(this.resolve(file).abs);
     const abs = path.resolve(dir, src.replace(/\\/g, '/'));
-    const type = IMAGE_MIME[path.extname(abs).toLowerCase()];
+    const ext = path.extname(abs).toLowerCase();
+    // a .charpie is served as text: the browser lays it out itself (embedded diagrams)
+    const type = ext === '.charpie' ? 'text/plain; charset=utf-8' : IMAGE_MIME[ext];
     if (!abs.startsWith(this.root + path.sep) || !type) throw new HttpError(400, `invalid image path: ${src}`);
     if (!fs.existsSync(abs)) throw new HttpError(404, `image not found: ${src}`);
     return { abs, type };

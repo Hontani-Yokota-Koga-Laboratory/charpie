@@ -1,5 +1,5 @@
-import { createContext, memo, useContext } from 'react';
-import { arrowHeadPath, lineAnchor, type EdgeLayout, type Layout, type NodeLayout } from '../layout';
+import { createContext, memo, useContext, useId } from 'react';
+import { arrowHeadPath, isDiagramSrc, lineAnchor, type EdgeLayout, type Layout, type NodeLayout } from '../layout';
 import { LINE_HEIGHT, FONT_FAMILY, inkCenter, type RichLine } from '../text/fit';
 import type { CSSProperties } from 'react';
 
@@ -15,7 +15,8 @@ const PRESERVE = { contain: 'xMidYMid meet', cover: 'xMidYMid slice', fill: 'non
 function NodeImage({ n, interactive }: { n: NodeLayout; interactive?: boolean }) {
   const resolve = useContext(ImageHrefContext);
   const { x, y, w, h } = n.box;
-  const href = n.style.src ? resolve(n.style.src) : undefined;
+  // a .charpie that is not laid out (yet): never an <image> of its text
+  const href = n.style.src && !isDiagramSrc(n.style.src) ? resolve(n.style.src) : undefined;
   if (!href) {
     // missing / unresolvable picture: a crossed box so it is obvious and still selectable
     return (
@@ -24,7 +25,7 @@ function NodeImage({ n, interactive }: { n: NodeLayout; interactive?: boolean })
         <path d={`M${x} ${y}L${x + w} ${y + h}M${x + w} ${y}L${x} ${y + h}`} stroke="#cbd5e1" strokeWidth={1} />
         {interactive && (
           <text x={x + w / 2} y={y + h / 2} fontSize={Math.max(9, Math.min(13, w / 12))} fill="#64748b" textAnchor="middle" dominantBaseline="middle" fontFamily={FONT_FAMILY}>
-            {n.style.src ? `画像なし: ${n.style.src}` : 'src= がありません'}
+            {!n.style.src ? 'src= がありません' : isDiagramSrc(n.style.src) ? `図: ${n.style.src}（読み込み中 / 見つかりません）` : `画像なし: ${n.style.src}`}
           </text>
         )}
       </g>
@@ -138,7 +139,7 @@ export const NodeShape = memo(function NodeShape({ n, hideText, interactive }: {
   const s = n.style;
   return (
     <g data-node={interactive ? n.id : undefined} className={interactive ? 'node' : undefined} opacity={s.opacity}>
-      {n.kind === 'image' && <NodeImage n={n} interactive={interactive} />}
+      {n.kind === 'image' && (n.embed ? <EmbeddedDiagram n={n} /> : <NodeImage n={n} interactive={interactive} />)}
       <path
         d={n.path}
         fill={s.fill === 'none' ? (interactive ? 'transparent' : 'none') : s.fill}
@@ -153,6 +154,34 @@ export const NodeShape = memo(function NodeShape({ n, hideText, interactive }: {
     </g>
   );
 });
+
+/** Another .charpie drawn inside an image shape (clipped to the shape's box). */
+function EmbeddedDiagram({ n }: { n: NodeLayout }) {
+  const e = n.embed!;
+  const clip = 'emb' + useId().replace(/[^a-zA-Z0-9_-]/g, '');
+  const b = n.box;
+  return (
+    <g style={{ pointerEvents: 'none' }}>
+      <clipPath id={clip}>
+        <rect x={b.x} y={b.y} width={b.w} height={b.h} />
+      </clipPath>
+      <g clipPath={`url(#${clip})`}>
+        <g transform={`translate(${e.dx} ${e.dy}) scale(${e.scale})`}>
+          {e.layout.frame && <rect x={e.layout.frame.x} y={e.layout.frame.y} width={e.layout.frame.w} height={e.layout.frame.h} fill="#ffffff" />}
+          {e.layout.nodes.map((m) => (
+            <NodeShape key={m.id} n={m} />
+          ))}
+          {e.layout.edges.map((x) => (
+            <EdgeShape key={x.key} e={x} />
+          ))}
+          {e.layout.edges.map((x) => (
+            <EdgeLabel key={x.key} e={x} bg="#ffffff" />
+          ))}
+        </g>
+      </g>
+    </g>
+  );
+}
 
 /** table / list content: positioned text pieces and (table) rules. */
 function BlockContent({ n, hidden }: { n: NodeLayout; hidden?: boolean }) {

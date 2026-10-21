@@ -1,4 +1,4 @@
-import { ancestors } from './dsl/parse';
+import { ancestors, parse } from './dsl/parse';
 import type { Doc, EdgeDef, EndPoint, NodeDef, Port, ShapeKind } from './dsl/types';
 import {
   center,
@@ -76,6 +76,8 @@ export interface NodeLayout {
   rich?: (RichLine | null)[];
   /** table / list: the content laid out (the label is not drawn) */
   blocks?: BlockLayout;
+  /** image of another diagram (`src="x.charpie"` / `"x.charpie#page"`): drawn inline, scaled into the box */
+  embed?: Embed;
   depth: number;
   parents: string[];
 }
@@ -575,8 +577,100 @@ export function edgeEnds(doc: Doc, e: EdgeDef, nodeMap: Map<string, NodeLayout>)
   return { a, b, free };
 }
 
+// ───────────────────────── embedded diagrams ─────────────────────────
+
+export interface Embed {
+  layout: Layout;
+  /** maps the embedded diagram into the shape's box */
+  scale: number;
+  dx: number;
+  dy: number;
+  /** the embedded diagram's own extent (its page, or its bounds) */
+  view: Box;
+}
+
+/**
+ * Finds the text of a `.charpie` named in `src=`. `base` is the file the src is relative to
+ * (undefined for the top level); it returns that text and the new base for nested embeds.
+ */
+export type EmbedResolver = (src: string, base: string | undefined) => { text: string; base: string } | undefined;
+let resolver: EmbedResolver | undefined;
+let embedBase: string | undefined;
+let embedDepth = 0;
+
+/** Set how embedded diagrams are found (server: files on disk; browser: fetched and cached). */
+export function setEmbedResolver(r: EmbedResolver | undefined, base?: string) {
+  resolver = r;
+  embedBase = base;
+}
+
+/** Run `fn` with the top-level file for relative `src=` paths. */
+export function withEmbedBase<T>(base: string | undefined, fn: () => T): T {
+  const prev = embedBase;
+  embedBase = base;
+  try {
+    return fn();
+  } finally {
+    embedBase = prev;
+  }
+}
+
+export const isDiagramSrc = (src: string | undefined) => !!src && /\.charpie(#[^#]*)?$/i.test(src);
+
+function layoutEmbed(n: NodeLayout, measure: Measure): Embed | undefined {
+  const src = n.style.src;
+  if (!resolver || !isDiagramSrc(src) || embedDepth >= 4) return undefined;
+  const [file, page] = src!.split('#');
+  const found = resolver(file, embedBase);
+  if (!found) return undefined;
+  const prev = embedBase;
+  embedBase = found.base;
+  embedDepth++;
+  try {
+    const layout = computeLayout(parse(found.text, page ? { page } : undefined), measure);
+    const view = layout.frame ?? boundsOf(layout);
+    const b = n.box;
+    const sx = b.w / Math.max(1, view.w),
+      sy = b.h / Math.max(1, view.h);
+    const scale = n.style.fit === 'cover' ? Math.max(sx, sy) : Math.min(sx, sy);
+    return { layout, scale, view, dx: b.x + (b.w - view.w * scale) / 2 - view.x * scale, dy: b.y + (b.h - view.h * scale) / 2 - view.y * scale };
+  } finally {
+    embedDepth--;
+    embedBase = prev;
+  }
+}
+
+/** Extent of shapes, arrows and labels (with a little margin). */
+export function boundsOf(layout: Layout): Box {
+  let x1 = Infinity,
+    y1 = Infinity,
+    x2 = -Infinity,
+    y2 = -Infinity;
+  const add = (x: number, y: number) => {
+    x1 = Math.min(x1, x);
+    y1 = Math.min(y1, y);
+    x2 = Math.max(x2, x);
+    y2 = Math.max(y2, y);
+  };
+  for (const n of layout.nodes) {
+    add(n.box.x - n.style.lw, n.box.y - n.style.lw);
+    add(n.box.x + n.box.w + n.style.lw, n.box.y + n.box.h + n.style.lw);
+  }
+  for (const e of layout.edges) {
+    for (const p of e.pts) add(p.x, p.y);
+    if (e.label) {
+      add(e.label.box.x, e.label.box.y);
+      add(e.label.box.x + e.label.box.w, e.label.box.y + e.label.box.h);
+    }
+  }
+  if (!Number.isFinite(x1)) return { x: 0, y: 0, w: 400, h: 300 };
+  const m = 8;
+  return { x: x1 - m, y: y1 - m, w: x2 - x1 + m * 2, h: y2 - y1 + m * 2 };
+}
+
 export function computeLayout(doc: Doc, measure: Measure, overrides?: Map<string, Box>): Layout {
   const nodes = doc.nodes.map((n) => layoutNode(doc, n, measure, overrides?.get(n.id)));
+  for (const n of nodes) if (n.kind === 'image' && isDiagramSrc(n.style.src)) n.embed = layoutEmbed(n, measure);
   const nodeMap = new Map(nodes.map((n) => [n.id, n]));
   const edges: EdgeLayout[] = [];
   for (const e of doc.edges) {

@@ -27,7 +27,7 @@ import {
   uniquePageId,
 } from '../src/dsl/patch';
 import { SHAPE_KINDS, type ArrowOp, type Doc, type Port, type ShapeKind, type View } from '../src/dsl/types';
-import { computeLayout, fitSize, type Layout } from '../src/layout';
+import { computeLayout, fitSize, withEmbedBase, type Layout } from '../src/layout';
 import { checkAll, type Issue } from '../src/check/check';
 import { autoFix } from '../src/check/resolve';
 import { align, distribute, matchSize, stack, translate, type AlignMode } from '../src/ops/arrange';
@@ -45,9 +45,10 @@ export interface Analysis {
   ignored: Issue[];
 }
 
-export function analyze(src: string, measure: Measure, view?: View): Analysis {
+/** `file`: absolute path of the .charpie, for diagrams it embeds (`src="other.charpie"`). */
+export function analyze(src: string, measure: Measure, view?: View, file?: string): Analysis {
   const doc = parseView(src, view);
-  const layout = computeLayout(doc, measure);
+  const layout = withEmbedBase(file, () => computeLayout(doc, measure));
   const all = checkAll(doc, layout);
   return { doc, layout, issues: all.filter((i) => !i.ignored), ignored: all.filter((i) => i.ignored) };
 }
@@ -66,12 +67,12 @@ export function viewParam(q: { get(k: string): string | null }): View | undefine
  * Issues of every view of a file: each page and each layout of a deck is checked on its own
  * (a page reports only problems that involve its own shapes). Plain diagrams: one view.
  */
-export function issuesAll(src: string, measure: Measure): { issues: IssueOut[]; ignored: number } {
+export function issuesAll(src: string, measure: Measure, file?: string): { issues: IssueOut[]; ignored: number } {
   const out: IssueOut[] = [];
   const seen = new Set<string>();
   let ignored = 0;
   for (const v of views(src)) {
-    const a = analyze(src, measure, v);
+    const a = analyze(src, measure, v, file);
     ignored += a.ignored.length;
     for (const i of issuesOut(a, src)) {
       const view = i.code === 'syntax' ? undefined : viewName(v);

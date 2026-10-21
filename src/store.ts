@@ -75,6 +75,8 @@ export interface State extends Derived {
   page: View | undefined;
   /** full-screen slide show */
   presenting: boolean;
+  /** bumped by remeasure() (fonts loaded, embedded diagrams arrived) */
+  measured: number;
   /** who produced the latest change (editor changes must not be echoed back) */
   origin: 'editor' | 'ui' | 'init' | 'remote';
   /** bumped when the text is replaced from outside, so in-flight canvas gestures abort */
@@ -143,6 +145,7 @@ export const useStore = create<State>((set, get) => ({
   src: initialSrc,
   page: undefined,
   presenting: false,
+  measured: 0,
   ...derive(initialSrc),
   origin: 'init',
   epoch: 0,
@@ -253,7 +256,7 @@ export const useStore = create<State>((set, get) => ({
   },
 
   remeasure() {
-    set(derive(get().src, get().page));
+    set({ ...derive(get().src, get().page), measured: get().measured + 1 });
   },
 
   select(sel, mode = 'replace') {
