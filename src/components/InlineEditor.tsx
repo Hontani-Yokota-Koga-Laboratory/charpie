@@ -44,14 +44,12 @@ function BlockEditor({ id }: { id: string }) {
     if (s.gestureBase === null) return;
     s.setSource(setNodeBody(s.src, s.doc, id, ref.current?.value ?? ''), { history: 'none' });
   };
-  const commit = (save: boolean) => {
+  const commit = () => {
     if (done.current) return;
     done.current = true;
+    live();
+    dropEmptySlot(id);
     const s = useStore.getState();
-    if (save) {
-      live();
-      dropEmptySlot(id);
-    } else if (s.gestureBase !== null) s.setSource(s.gestureBase, { history: 'none' });
     s.endGesture();
     s.setEditing(null);
   };
@@ -67,12 +65,9 @@ function BlockEditor({ id }: { id: string }) {
         placeholder={node.kind === 'table' ? '| 見出し | 見出し |\n|---|---|\n| a | b |' : '- 項目\n  - 入れ子'}
         onKeyDown={(e) => {
           e.stopPropagation();
-          if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+          if ((e.key === 'Enter' && (e.ctrlKey || e.metaKey)) || (e.key === 'Escape' && !e.nativeEvent.isComposing)) {
             e.preventDefault();
-            commit(true);
-          } else if (e.key === 'Escape') {
-            e.preventDefault();
-            commit(false);
+            commit();
           } else if (e.key === 'Tab') {
             // indent / outdent the current line (lists nest by two spaces)
             e.preventDefault();
@@ -93,10 +88,10 @@ function BlockEditor({ id }: { id: string }) {
           }
         }}
         onInput={live}
-        onBlur={() => commit(true)}
+        onBlur={() => commit()}
         onPointerDown={(e) => e.stopPropagation()}
       />
-      <div className="block-editor-hint">Ctrl+Enter で確定 · Esc で取消 · Tab で字下げ</div>
+      <div className="block-editor-hint">Ctrl+Enter / Esc で確定 · Tab で字下げ</div>
     </div>
   );
 }
@@ -155,12 +150,11 @@ function LabelEditor() {
     const next = editing.type === 'node' ? setNodeLabel(s.src, s.doc, editing.id, text) : setEdgeLabel(s.src, s.doc, editing.id, text);
     s.setSource(next, { history: 'none' });
   };
-  const commit = (save: boolean) => {
+  const commit = () => {
     if (done.current) return;
     done.current = true;
+    live();
     const s = useStore.getState();
-    if (save) live();
-    else if (s.gestureBase !== null) s.setSource(s.gestureBase, { history: 'none' });
     // a slot left empty goes back to being a placeholder (drop the bare `slot ""` line)
     if (editing.type === 'node') dropEmptySlot(editing.id);
     s.endGesture();
@@ -202,13 +196,9 @@ function LabelEditor() {
         style={{ fontSize, fontFamily: fontStack(family), lineHeight: LINE_HEIGHT, color, fontWeight: weight }}
         onKeyDown={(e) => {
           e.stopPropagation();
-          if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+          if (((e.key === 'Enter' && !e.shiftKey) || e.key === 'Escape') && !e.nativeEvent.isComposing) {
             e.preventDefault();
-            commit(true);
-          }
-          if (e.key === 'Escape') {
-            e.preventDefault();
-            commit(false);
+            commit();
           }
         }}
         onInput={() => {
@@ -223,7 +213,7 @@ function LabelEditor() {
           e.preventDefault();
           document.execCommand('insertText', false, e.clipboardData.getData('text/plain'));
         }}
-        onBlur={() => commit(true)}
+        onBlur={() => commit()}
         onPointerDown={(e) => e.stopPropagation()}
       />
     </div>

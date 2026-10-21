@@ -306,14 +306,11 @@ export function dropEmptySlot(id: string) {
 /** Start / finish of the edit: one undo step; leaving the editor (focus elsewhere) saves. */
 function useSession(id: string, onSave?: () => void) {
   const done = useRef(false);
-  const finish = (save: boolean) => {
+  const finish = () => {
     if (done.current) return;
     done.current = true;
-    const s = useStore.getState();
-    if (save) {
-      onSave?.();
-      dropEmptySlot(id);
-    } else if (s.gestureBase !== null) s.setSource(s.gestureBase, { history: 'none' });
+    onSave?.();
+    dropEmptySlot(id);
     useStore.getState().endGesture();
     useStore.getState().setEditing(null);
   };
@@ -326,7 +323,7 @@ function useSession(id: string, onSave?: () => void) {
 
 function Frame({ box, finish, done, toolbar, children, onBackdrop }: {
   box: { x: number; y: number; w: number; h: number };
-  finish: (save: boolean) => void;
+  finish: () => void;
   done: React.MutableRefObject<boolean>;
   toolbar: ReactNode;
   children: ReactNode;
@@ -346,17 +343,14 @@ function Frame({ box, finish, done, toolbar, children, onBackdrop }: {
       onBlur={() => {
         // focus moving between the pieces (or to the toolbar) is not leaving
         setTimeout(() => {
-          if (!done.current && !ref.current?.contains(document.activeElement)) finish(true);
+          if (!done.current && !ref.current?.contains(document.activeElement)) finish();
         }, 0);
       }}
       onKeyDown={(e) => {
         e.stopPropagation();
-        if (e.key === 'Escape') {
+        if ((e.key === 'Escape' && !e.nativeEvent.isComposing) || (e.key === 'Enter' && (e.ctrlKey || e.metaKey))) {
           e.preventDefault();
-          finish(false);
-        } else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-          e.preventDefault();
-          finish(true);
+          finish();
         }
       }}
     >
@@ -539,7 +533,7 @@ export function ListEditor({ id, onSource }: { id: string; onSource: () => void 
         }
         if (k === its.length - 1) {
           // Enter on an empty last item: done
-          return finish(true);
+          return finish();
         }
       }
       const tail = cutAfterCaret(el);
@@ -707,7 +701,7 @@ export function ListEditor({ id, onSource }: { id: string; onSource: () => void 
           >
             <Code2 size={15} />
           </Btn>
-          <Btn title="確定（Ctrl+Enter / 外をクリック）" onClick={() => finish(true)}>
+          <Btn title="確定（Ctrl+Enter / 外をクリック）" onClick={() => finish()}>
             <Check size={15} />
           </Btn>
         </>
@@ -990,7 +984,7 @@ export function TableEditor({ id, onSource }: { id: string; onSource: () => void
           }}>
             <Code2 size={15} />
           </Btn>
-          <Btn title="確定（Ctrl+Enter / 外をクリック）" onClick={() => finish(true)}>
+          <Btn title="確定（Ctrl+Enter / 外をクリック）" onClick={() => finish()}>
             <Check size={15} />
           </Btn>
         </>
