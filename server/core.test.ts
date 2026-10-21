@@ -75,7 +75,7 @@ describe('image export', () => {
   });
 });
 
-import { embedFonts, findFamily, matchWeight } from './fonts';
+import { embedFonts, findFamily, listFamilies, matchWeight } from './fonts';
 import { issuesAll as issuesOf } from './core';
 
 describe('font families', () => {
@@ -90,6 +90,12 @@ describe('font families', () => {
     expect(rounded).not.toBeCloseTo(inter, 1);
     // its own kana (not the 100-per-char fallback)
     expect(fontMeasure('あいう', 700, 'M PLUS Rounded 1c')).toBeGreaterThan(200);
+  });
+  it('Office fonts fall back to their metric-compatible fonts', () => {
+    expect(findFamily('Calibri')?.[0].family).toBe('Carlito');
+    expect(findFamily('times new roman')?.[0].family).toBe('Tinos');
+    expect(fontMeasure('Proposed method', 400, 'Calibri')).toBeCloseTo(fontMeasure('Proposed method', 400, 'Carlito'), 3);
+    expect(listFamilies()).toEqual(expect.arrayContaining(['Calibri', 'Times New Roman', 'Noto Sans JP', 'BIZ UDPGothic']));
   });
   it('measures text as written: no ligatures / contextual arrows', () => {
     expect(fontMeasure('->', 400)).toBeCloseTo(fontMeasure('-', 400) + fontMeasure('>', 400), 0);

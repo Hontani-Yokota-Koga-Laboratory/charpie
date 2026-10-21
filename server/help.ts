@@ -84,7 +84,10 @@ After writing, check "errors" — fix overlaps/overflow with {"op":"fix"} or by 
               family=default = the built-in font (Inter + Japanese fallback). Text is drawn and measured as written
               (no ligatures: "->" stays two characters). Found in: fonts/ next to the .charpie (.ttf/.otf/.woff2,
               the name inside the file), else an installed npm package @fontsource/<kebab-name>
-              (bundled: "M PLUS Rounded 1c", "M PLUS 1p"). Missing → check warns (font) and the default is used.
+              (bundled: "M PLUS Rounded 1c", "M PLUS 1p", "Noto Sans JP", "Noto Serif JP", "BIZ UDPGothic",
+              "BIZ UDPMincho", Carlito, Caladea, Arimo, Tinos). Calibri / Cambria / Arial / Times New Roman are
+              drawn and measured with their metric-compatible fonts (Carlito / Caladea / Arimo / Tinos: same
+              widths) unless the real font is in fonts/. Missing → check warns (font) and the default is used.
               Browser, PNG/PDF export and check/measure use the same files; SVG export embeds the needed subsets;
               TikZ selects it with luatexja-fontspec (the font must be installed for lualatex).
   node attrs: fill stroke text lw dash(solid|dashed|dotted) font(auto|px) family weight(bold|light)

@@ -7,6 +7,9 @@
  *   1. `fonts/` next to the .charpie (any .ttf / .otf / .woff / .woff2; the name inside the file counts)
  *   2. an installed Fontsource package `@fontsource/<name in kebab case>` (Google Fonts on npm;
  *      M PLUS Rounded 1c and M PLUS 1p ship with charpie, others: `npm i @fontsource/<name>`)
+ *   3. for the usual Office fonts, a metric-compatible free font (same advance widths): `Calibri` is
+ *      drawn and measured with Carlito, and so on (ALIASES). The name stays as written, so the TikZ
+ *      export still asks lualatex for the real font, and line breaks match where it is installed.
  * Nothing is fetched at run time, so a diagram looks the same offline and on every machine.
  */
 import crypto from 'node:crypto';
@@ -40,6 +43,14 @@ const byId = new Map<string, Face>();
 const families = new Map<string, Face[] | null>();
 const fontDirs = new Set<string>();
 const scanned = new Map<string, Face[]>();
+
+/** Office font → metric-compatible Fontsource family (Croscore / Google ChromeOS fonts) */
+const ALIASES: Record<string, string> = {
+  calibri: 'Carlito',
+  cambria: 'Caladea',
+  arial: 'Arimo',
+  'times new roman': 'Tinos',
+};
 
 const idOf = (file: string) => crypto.createHash('sha1').update(file).digest('hex').slice(0, 12);
 const key = (name: string) => name.trim().toLowerCase();
@@ -136,7 +147,7 @@ export function findFamily(name: string): Face[] | undefined {
       break;
     }
   }
-  faces ??= fromFontsource(name);
+  faces ??= fromFontsource(name) ?? (ALIASES[k] ? fromFontsource(ALIASES[k]) : undefined);
   families.set(k, faces ?? null);
   for (const f of faces ?? []) byId.set(f.id, f);
   return faces;
@@ -170,11 +181,14 @@ function fontsourceFamilies(): string[] {
   return (fontsourceNames = [...names]);
 }
 
-/** Every family `family=` can name right now: `fonts/` next to the open files first, then Fontsource packages. */
+/** Every family `family=` can name right now: `fonts/` next to the open files first, then Fontsource packages and their Office names. */
 export function listFamilies(): string[] {
   const out = new Set<string>();
   for (const dir of fontDirs) for (const f of scan(dir)) out.add(f.family);
-  for (const f of fontsourceFamilies()) out.add(f);
+  const packaged = fontsourceFamilies();
+  for (const f of packaged) out.add(f);
+  for (const [alias, to] of Object.entries(ALIASES))
+    if (packaged.includes(to) && ![...out].some((x) => key(x) === alias)) out.add(alias.replace(/\b\w/g, (c) => c.toUpperCase()));
   return [...out].sort((a, b) => a.localeCompare(b));
 }
 
