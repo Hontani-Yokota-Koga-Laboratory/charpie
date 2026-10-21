@@ -2,7 +2,7 @@
  * Pure document operations used by the HTTP API and the CLI.
  * Everything takes source text and returns source text.
  */
-import { endText, parse } from '../src/dsl/parse';
+import { endText, parse as parseView, views } from '../src/dsl/parse';
 import {
   addEdge,
   addNodes,
@@ -18,15 +18,22 @@ import {
   setSetting,
   uniqueId,
   isValidId,
+  addPage,
+  addLayout,
+  duplicatePage,
+  movePage,
+  removePage,
+  setPageHeader,
+  uniquePageId,
 } from '../src/dsl/patch';
-import { SHAPE_KINDS, type ArrowOp, type Doc, type Port, type ShapeKind } from '../src/dsl/types';
+import { SHAPE_KINDS, type ArrowOp, type Doc, type Port, type ShapeKind, type View } from '../src/dsl/types';
 import { computeLayout, fitSize, type Layout } from '../src/layout';
 import { checkAll, type Issue } from '../src/check/check';
 import { autoFix } from '../src/check/resolve';
 import { align, distribute, matchSize, stack, translate, type AlignMode } from '../src/ops/arrange';
 import type { Measure } from '../src/text/fit';
 import { HttpError } from './workspace';
-import { issuesOut } from '../src/check/report';
+import { issuesOut, type IssueOut } from '../src/check/report';
 
 export { issuesOut, type IssueOut } from '../src/check/report';
 
@@ -38,17 +45,57 @@ export interface Analysis {
   ignored: Issue[];
 }
 
-export function analyze(src: string, measure: Measure): Analysis {
-  const doc = parse(src);
+export function analyze(src: string, measure: Measure, view?: View): Analysis {
+  const doc = parseView(src, view);
   const layout = computeLayout(doc, measure);
   const all = checkAll(doc, layout);
   return { doc, layout, issues: all.filter((i) => !i.ignored), ignored: all.filter((i) => i.ignored) };
 }
 
+/** `page intro` / `layout base` (undefined for a plain diagram). */
+export const viewName = (v: View | undefined) => (v ? ('page' in v ? `page ${v.page}` : `layout ${v.layout}`) : undefined);
+
+/** `?page=intro` / `?layout=base` → View. */
+export function viewParam(q: { get(k: string): string | null }): View | undefined {
+  const page = q.get('page');
+  const layout = q.get('layout');
+  return layout ? { layout } : page ? { page } : undefined;
+}
+
+/**
+ * Issues of every view of a file: each page and each layout of a deck is checked on its own
+ * (a page reports only problems that involve its own shapes). Plain diagrams: one view.
+ */
+export function issuesAll(src: string, measure: Measure): { issues: IssueOut[]; ignored: number } {
+  const out: IssueOut[] = [];
+  const seen = new Set<string>();
+  let ignored = 0;
+  for (const v of views(src)) {
+    const a = analyze(src, measure, v);
+    ignored += a.ignored.length;
+    for (const i of issuesOut(a, src)) {
+      const view = i.code === 'syntax' ? undefined : viewName(v);
+      const key = `${i.code}|${i.line}|${i.message}|${view ?? ''}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(view ? { ...i, view } : i);
+    }
+  }
+  return { issues: out, ignored };
+}
+
 /** Compact, Claude-friendly summary of a diagram. */
 export function summarize(src: string, a: Analysis) {
   const { doc, layout } = a;
+  const deck = doc.deck && {
+    view: viewName(doc.deck.view),
+    canvas: doc.canvas,
+    pages: doc.deck.pages.map((p) => ({ id: p.id, label: p.label, layout: p.layout ?? null, line: p.line + 1 })),
+    layouts: doc.deck.layouts.map((l) => ({ name: l.name, extends: l.extends ?? null, slots: l.slots, line: l.line + 1 })),
+    emptySlots: doc.deck.placeholders.map((p) => p.id),
+  };
   return {
+    ...(deck ? { deck } : {}),
     nodes: doc.nodes.map((n) => {
       const l = layout.nodeMap.get(n.id)!;
       return {
@@ -64,6 +111,8 @@ export function summarize(src: string, a: Analysis) {
         classes: n.classes,
         fontSize: l.text.size,
         line: n.line + 1,
+        ...(n.locked ? { locked: true } : {}),
+        ...(n.slot ? { slot: n.slot } : {}),
       };
     }),
     edges: doc.edges.map((e) => ({ key: e.key, from: endText(e, 'from'), to: endText(e, 'to'), op: e.op, label: e.label, fromPort: e.fromPort ?? null, toPort: e.toPort ?? null, attrs: e.attrs, line: e.line + 1 })),
@@ -126,15 +175,31 @@ export type Op =
   | { op: 'match-size'; ids: string[]; mode?: 'width' | 'height' | 'both' }
   | { op: 'stack'; ids: string[]; axis: 'h' | 'v'; gap?: number }
   | { op: 'fix'; only?: string[] }
-  | { op: 'setting'; key: string; value: number | null };
+  | { op: 'setting'; key: string; value: number | null }
+  | { op: 'add-page'; id?: string; label?: string; layout?: string; after?: string }
+  | { op: 'remove-page'; id: string }
+  | { op: 'duplicate-page'; id: string; to?: string }
+  | { op: 'move-page'; id: string; index: number }
+  | { op: 'set-page'; id: string; label?: string; layout?: string | null; rename?: string }
+  | { op: 'add-layout'; name: string; extends?: string };
 
 const DEFAULT_SIZE: Record<ShapeKind, [number, number]> = { rect: [140, 60], round: [140, 60], ellipse: [120, 72], diamond: [140, 90], trap: [150, 64], para: [150, 60], hex: [150, 64], cross: [60, 60], plus: [60, 60], text: [120, 36], image: [160, 120] };
 const STEM: Record<ShapeKind, string> = { rect: 'box', round: 'box', ellipse: 'oval', diamond: 'cond', trap: 'trap', para: 'io', hex: 'hex', cross: 'cross', plus: 'plus', text: 'note', image: 'img' };
 
-function need(doc: Doc, id: string) {
+function need(doc: Doc, id: string, write = true) {
   const n = doc.nodeMap.get(id);
   if (!n) throw new HttpError(400, `node not found: ${id}（存在する ID: ${doc.nodes.map((x) => x.id).join(', ') || 'なし'}）`);
+  if (write && n.locked) {
+    const owner = doc.deck?.layouts.find((l) => n.spans.stmt.from >= l.lines.from && n.spans.stmt.from < l.lines.to)?.name;
+    throw new HttpError(400, `${id} はレイアウト ${owner ?? ''} の図形です（?layout=${owner ?? 'NAME'} で編集）`);
+  }
   return n;
+}
+
+function needPage(doc: Doc, id: string) {
+  const p = doc.deck?.pages.find((x) => x.id === id);
+  if (!p) throw new HttpError(400, `page not found: ${id}（${doc.deck?.pages.map((x) => x.id).join(', ') || 'ページなし'}）`);
+  return p;
 }
 const str = (attrs: Record<string, string | number> | undefined) => Object.fromEntries(Object.entries(attrs ?? {}).map(([k, v]) => [k, String(v)]));
 
@@ -152,9 +217,10 @@ export interface OpResult {
   created: string[];
 }
 
-export function applyOps(src: string, ops: Op[], measure: Measure): OpResult {
+export function applyOps(src: string, ops: Op[], measure: Measure, view?: View): OpResult {
   const created: string[] = [];
   let out = src;
+  const parse = (s: string) => parseView(s, view);
   for (const o of ops) {
     const doc = parse(out);
     switch (o.op) {
@@ -172,7 +238,7 @@ export function applyOps(src: string, ops: Op[], measure: Measure): OpResult {
         if (x === undefined || y === undefined) {
           const gap = o.gap ?? Math.max(40, doc.settings.gap * 3);
           if (o.near) {
-            const r = need(doc, o.near);
+            const r = need(doc, o.near, false);
             const dir = o.dir ?? 'right';
             x ??= dir === 'right' ? r.x + r.w + gap : dir === 'left' ? r.x - gap - w : Math.round(r.x + (r.w - w) / 2);
             y ??= dir === 'below' ? r.y + r.h + gap : dir === 'above' ? r.y - gap - h : Math.round(r.y + (r.h - h) / 2);
@@ -194,8 +260,8 @@ export function applyOps(src: string, ops: Op[], measure: Measure): OpResult {
       case 'connect': {
         // an end may be a point: "(x, y)" or "+(dx, dy)" (relative to the other end)
         const isPt = (v: string) => /^\+?\(\s*-?[\d.]+\s*,\s*-?[\d.]+\s*\)$/.test(v ?? '');
-        if (!isPt(o.from)) need(doc, o.from);
-        if (!isPt(o.to)) need(doc, o.to);
+        if (!isPt(o.from)) need(doc, o.from, false);
+        if (!isPt(o.to)) need(doc, o.to, false);
         if (isPt(o.from) && isPt(o.to) && o.from.startsWith('+') && o.to.startsWith('+')) throw new HttpError(400, 'connect: only one end can be relative +(dx, dy)');
         out = addEdge(out, doc, o.from, o.to, o.arrow ?? '->', { label: o.label, fromPort: o.fromPort, toPort: o.toPort, attrs: str(o.attrs) });
         break;
@@ -263,10 +329,46 @@ export function applyOps(src: string, ops: Op[], measure: Measure): OpResult {
         out = stack(out, doc, o.ids, o.axis, o.gap ?? 24);
         break;
       case 'fix':
-        out = autoFix(out, measure, { only: o.only ? new Set(o.only) : undefined });
+        out = autoFix(out, measure, { only: o.only ? new Set(o.only) : undefined, view });
         break;
       case 'setting':
         out = setSetting(out, doc, o.key, o.value === null ? undefined : o.value);
+        break;
+      case 'add-page': {
+        const id = o.id ?? uniquePageId(doc);
+        if (!isValidId(id) || doc.deck?.pages.some((p) => p.id === id)) throw new HttpError(400, `invalid or duplicate page id: ${id}`);
+        if (o.layout && !doc.deck?.layouts.some((l) => l.name === o.layout)) throw new HttpError(400, `layout not found: ${o.layout}`);
+        if (o.after) needPage(doc, o.after);
+        out = addPage(out, doc, { id, label: o.label, layout: o.layout, after: o.after });
+        created.push(id);
+        break;
+      }
+      case 'remove-page':
+        needPage(doc, o.id);
+        out = removePage(out, doc, o.id);
+        break;
+      case 'duplicate-page': {
+        needPage(doc, o.id);
+        const to = o.to ?? uniquePageId(doc);
+        if (!isValidId(to) || doc.deck?.pages.some((p) => p.id === to)) throw new HttpError(400, `invalid or duplicate page id: ${to}`);
+        out = duplicatePage(out, doc, o.id, to);
+        created.push(to);
+        break;
+      }
+      case 'move-page':
+        needPage(doc, o.id);
+        out = movePage(out, doc, o.id, o.index);
+        break;
+      case 'set-page': {
+        needPage(doc, o.id);
+        if (o.rename && (!isValidId(o.rename) || doc.deck?.pages.some((p) => p.id === o.rename))) throw new HttpError(400, `invalid or duplicate page id: ${o.rename}`);
+        if (o.layout && !doc.deck?.layouts.some((l) => l.name === o.layout)) throw new HttpError(400, `layout not found: ${o.layout}`);
+        out = setPageHeader(out, doc, o.id, { ...(o.label !== undefined ? { label: o.label } : {}), ...(o.layout !== undefined ? { layout: o.layout ?? undefined } : {}), ...(o.rename ? { id: o.rename } : {}) });
+        break;
+      }
+      case 'add-layout':
+        if (!isValidId(o.name) || doc.deck?.layouts.some((l) => l.name === o.name)) throw new HttpError(400, `invalid or duplicate layout name: ${o.name}`);
+        out = addLayout(out, doc, o.name, o.extends);
         break;
       default:
         throw new HttpError(400, `unknown op: ${(o as { op: string }).op}`);

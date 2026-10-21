@@ -14,7 +14,7 @@ export function InlineEditor() {
 
   const node = editing.type === 'node' ? layout.nodeMap.get(editing.id) : undefined;
   const edge = editing.type === 'edge' ? layout.edgeMap.get(editing.id) : undefined;
-  const initial = node?.def.label ?? edge?.def.label ?? '';
+  const initial = (node && (node.def.labelSource ?? node.def.label)) ?? edge?.def.label ?? '';
 
   useLayoutEffect(() => {
     const el = ref.current;

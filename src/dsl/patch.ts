@@ -3,7 +3,7 @@
  * Every UI mutation goes through these helpers so that the text stays the
  * single source of truth and diffs stay small.
  */
-import { endText, parse } from './parse';
+import { endText, parse, viewOf } from './parse';
 import { POINT_END, type ArrowOp, type Doc, type EdgeDef, type NodeDef, type Port, type ShapeKind, type Span } from './types';
 
 export interface Edit {
@@ -91,7 +91,7 @@ function geomEdits(node: NodeDef, g: Partial<Geom>): Edit[] {
   const h = g.h ?? node.h;
   const atText = `at (${fmtNum(x)}, ${fmtNum(y)})`;
   const sizeText = `size ${fmtNum(Math.max(1, w))}x${fmtNum(Math.max(1, h))}`;
-  const afterHead = node.spans.label?.to ?? node.spans.id!.to;
+  const afterHead = node.spans.label?.to ?? node.spans.head?.to ?? node.spans.id!.to;
   if (g.x !== undefined || g.y !== undefined) {
     if (node.spans.at) edits.push({ ...node.spans.at, insert: atText });
     else edits.push({ from: afterHead, to: afterHead, insert: ' ' + atText });
@@ -113,28 +113,28 @@ export function setNodesGeom(src: string, doc: Doc, geoms: Map<string, Partial<G
   const entries = geoms instanceof Map ? [...geoms.entries()] : Object.entries(geoms);
   const edits: Edit[] = [];
   for (const [id, g] of entries) {
-    const node = doc.nodeMap.get(id);
+    const node = editable(doc, id);
     if (node) edits.push(...geomEdits(node, g));
   }
   return applyEdits(src, edits);
 }
 
 export function setNodeLabel(src: string, doc: Doc, id: string, label: string): string {
-  const node = doc.nodeMap.get(id);
+  const node = editable(doc, id);
   if (!node) return src;
   if (node.spans.label) {
     if (!label) return applyEdits(src, [removeSpan(src, node.spans.label)]);
     return applyEdits(src, [{ ...node.spans.label, insert: quote(label) }]);
   }
   if (!label) return src;
-  const pos = node.spans.id!.to;
+  const pos = (node.spans.head ?? node.spans.id!).to;
   return applyEdits(src, [{ from: pos, to: pos, insert: ' ' + quote(label) }]);
 }
 
 export function setNodesAttr(src: string, doc: Doc, ids: Iterable<string>, key: string, value: string | undefined): string {
   const edits: Edit[] = [];
   for (const id of ids) {
-    const node = doc.nodeMap.get(id);
+    const node = editable(doc, id);
     if (node) edits.push(...attrEdits(src, node, key, value));
   }
   return applyEdits(src, edits);
@@ -143,17 +143,18 @@ export function setNodesAttr(src: string, doc: Doc, ids: Iterable<string>, key: 
 export function setNodesKind(src: string, doc: Doc, ids: Iterable<string>, kind: ShapeKind): string {
   const edits: Edit[] = [];
   for (const id of ids) {
-    const node = doc.nodeMap.get(id);
+    const node = editable(doc, id);
     if (node?.spans.kind) edits.push({ ...node.spans.kind, insert: kind });
   }
   return applyEdits(src, edits);
 }
 
 export function renameNode(src: string, doc: Doc, oldId: string, newId: string): string {
-  const node = doc.nodeMap.get(oldId);
-  if (!node || !isValidId(newId) || doc.nodeMap.has(newId)) return src;
+  const node = editable(doc, oldId);
+  if (!node || node.slot || !isValidId(newId) || doc.nodeMap.has(newId)) return src;
   const edits: Edit[] = [{ ...node.spans.id!, insert: newId }];
   for (const e of doc.edges) {
+    if (e.locked) continue;
     if (e.from === oldId) edits.push({ ...e.spans.fromRef!, insert: newId });
     if (e.to === oldId) edits.push({ ...e.spans.toRef!, insert: newId });
   }
@@ -193,11 +194,20 @@ export function nodeLine(n: NewNode): string {
   return s;
 }
 
-/** Insert lines right after `after` (a statement's line span) or at EOF. */
-function insertLines(src: string, lines: string[], after: Span | undefined): string {
-  const text = lines.join('\n');
-  if (after) {
-    const pos = after.to;
+/** A shape this view may change (not one inherited from the page's layout). */
+function editable(doc: Doc, id: string): NodeDef | undefined {
+  const n = doc.nodeMap.get(id);
+  return n && !n.locked ? n : undefined;
+}
+
+const lastOf = <T extends { locked?: boolean }>(xs: T[]): T | undefined => xs.filter((x) => !x.locked).pop();
+
+/** Insert lines right after `after` (a statement's line span), at the end of the view's page / layout block, or at EOF. */
+function insertLines(src: string, lines: string[], after: Span | undefined, doc?: Doc): string {
+  const block = doc?.deck?.block;
+  const text = lines.map((l) => (l && block ? block.indent + l : l)).join('\n');
+  const pos = after?.to ?? block?.insertAt;
+  if (pos !== undefined) {
     const needsNl = pos > 0 && src[pos - 1] !== '\n';
     return src.slice(0, pos) + (needsNl ? '\n' : '') + text + '\n' + src.slice(pos);
   }
@@ -206,8 +216,7 @@ function insertLines(src: string, lines: string[], after: Span | undefined): str
 }
 
 export function addNodes(src: string, doc: Doc, nodes: NewNode[]): string {
-  const last = doc.nodes[doc.nodes.length - 1];
-  return insertLines(src, nodes.map(nodeLine), last?.spans.lines);
+  return insertLines(src, nodes.map(nodeLine), lastOf(doc.nodes)?.spans.lines, doc);
 }
 
 export function edgeLine(from: string, to: string, op: ArrowOp = '->', opts: { fromPort?: Port; toPort?: Port; label?: string; attrs?: Record<string, string> } = {}): string {
@@ -218,14 +227,14 @@ export function edgeLine(from: string, to: string, op: ArrowOp = '->', opts: { f
 }
 
 export function addEdgeLines(src: string, doc: Doc, lines: string[]): string {
-  const lastEdge = doc.edges[doc.edges.length - 1];
-  const lastNode = doc.nodes[doc.nodes.length - 1];
+  const lastEdge = lastOf(doc.edges);
+  const lastNode = lastOf(doc.nodes);
   const anchor = lastEdge && (!lastNode || lastEdge.spans.lines.from > lastNode.spans.lines.from) ? lastEdge : lastNode;
   if (!lastEdge && lastNode) {
     // first edge: separate from the node block with a blank line
-    return insertLines(src, ['', ...lines], lastNode.spans.lines);
+    return insertLines(src, ['', ...lines], lastNode.spans.lines, doc);
   }
-  return insertLines(src, lines, anchor?.spans.lines);
+  return insertLines(src, lines, anchor?.spans.lines, doc);
 }
 
 export function addEdge(src: string, doc: Doc, from: string, to: string, op: ArrowOp = '->', opts: Parameters<typeof edgeLine>[3] = {}): string {
@@ -235,13 +244,13 @@ export function addEdge(src: string, doc: Doc, from: string, to: string, op: Arr
 export function setEdgesAttr(src: string, doc: Doc, keys: Iterable<string>, key: string, value: string | undefined): string {
   const set = new Set(keys);
   const edits: Edit[] = [];
-  for (const e of doc.edges) if (set.has(e.key)) edits.push(...attrEdits(src, e, key, value));
+  for (const e of doc.edges) if (set.has(e.key) && !e.locked) edits.push(...attrEdits(src, e, key, value));
   return applyEdits(src, edits);
 }
 
 export function setEdgeLabel(src: string, doc: Doc, key: string, label: string): string {
   const e = doc.edges.find((e) => e.key === key);
-  if (!e) return src;
+  if (!e || e.locked) return src;
   if (e.spans.label) {
     if (!label) return applyEdits(src, [removeSpan(src, e.spans.label)]);
     return applyEdits(src, [{ ...e.spans.label, insert: quote(label) }]);
@@ -268,7 +277,7 @@ export function setEdgeEnds(src: string, doc: Doc, changes: { key: string; which
   const edits: Edit[] = [];
   for (const c of changes) {
     const e = doc.edges.find((x) => x.key === c.key);
-    if (e) edits.push({ ...endSpan(e, c.which), insert: c.end });
+    if (e && !e.locked) edits.push({ ...endSpan(e, c.which), insert: c.end });
   }
   return applyEdits(src, edits);
 }
@@ -277,7 +286,7 @@ export function setEdgesOp(src: string, doc: Doc, keys: Iterable<string>, op: Ar
   const set = new Set(keys);
   return applyEdits(
     src,
-    doc.edges.filter((e) => set.has(e.key) && e.spans.op).map((e) => ({ ...e.spans.op!, insert: op })),
+    doc.edges.filter((e) => set.has(e.key) && !e.locked && e.spans.op).map((e) => ({ ...e.spans.op!, insert: op })),
   );
 }
 
@@ -287,6 +296,7 @@ export function removeItems(src: string, doc: Doc, nodeIds: Iterable<string>, ed
   const keys = new Set(edgeKeys);
   const edits: Edit[] = [];
   for (const n of doc.nodes) {
+    if (n.locked) continue;
     if (ids.has(n.id)) edits.push({ ...n.spans.lines, insert: '' });
     else {
       const a = n.attrList.find((a) => a.key === 'in' && ids.has(a.value));
@@ -294,6 +304,7 @@ export function removeItems(src: string, doc: Doc, nodeIds: Iterable<string>, ed
     }
   }
   for (const e of doc.edges) {
+    if (e.locked) continue;
     if (keys.has(e.key) || ids.has(e.from) || ids.has(e.to)) edits.push({ ...e.spans.lines, insert: '' });
   }
   return applyEdits(src, edits);
@@ -344,13 +355,12 @@ export function pasteText(src: string, doc: Doc, text: string, dx: number, dy: n
     return rename.get(which === 'from' ? e.from : e.to)!;
   };
   const edgeLines = clip.edges.map((e) => edgeLine(end(e, 'from'), end(e, 'to'), e.op, { fromPort: e.fromPort, toPort: e.toPort, label: e.label, attrs: e.attrs }));
-  if (edgeLines.length) out = addEdgeLines(out, parse(out), edgeLines);
+  if (edgeLines.length) out = addEdgeLines(out, parse(out, viewOf(doc)), edgeLines);
   return { src: out, ids: [...rename.values()] };
 }
 
 function insertAfterNodes(src: string, doc: Doc, lines: string[]): string {
-  const last = doc.nodes[doc.nodes.length - 1];
-  return insertLines(src, lines, last?.spans.lines);
+  return insertLines(src, lines, lastOf(doc.nodes)?.spans.lines, doc);
 }
 
 export function addNodeLines(src: string, doc: Doc, lines: string[]): string {
@@ -373,4 +383,120 @@ export function setSetting(src: string, doc: Doc, key: string, value: number | u
   while (i < lines.length && /^\s*(#|\/\/)/.test(lines[i])) i++;
   lines.splice(i, 0, line);
   return lines.join('\n');
+}
+
+// ───────────────────────── decks: pages and layouts ─────────────────────────
+
+export interface PageHeader {
+  id: string;
+  label?: string;
+  layout?: string;
+}
+
+export function pageHeader(p: PageHeader): string {
+  return `page ${p.id}${p.label ? ' ' + quote(p.label) : ''}${p.layout ? ` layout=${p.layout}` : ''}`;
+}
+
+/** A fresh page id: p1, p2, … not used yet. */
+export function uniquePageId(doc: Doc, stem = 'p'): string {
+  const taken = new Set(doc.deck?.pages.map((p) => p.id));
+  for (let i = doc.deck?.pages.length ?? 1; ; i++) if (!taken.has(`${stem}${i}`)) return `${stem}${i}`;
+}
+
+function blockText(src: string, lines: Span): string {
+  const t = src.slice(lines.from, lines.to);
+  return t.endsWith('\n') ? t : t + '\n';
+}
+
+/** Insert a whole block (with a blank line before it) after `after`, or at EOF. */
+function insertBlock(src: string, text: string, after?: Span): string {
+  if (after) {
+    const pos = after.to;
+    const pre = pos > 0 && src[pos - 1] !== '\n' ? '\n' : '';
+    return src.slice(0, pos) + pre + '\n' + text + src.slice(pos);
+  }
+  const body = src.replace(/\s*$/, '');
+  return (body ? body + '\n\n' : '') + text;
+}
+
+/**
+ * Add a page after `after` (default: the last page). Without a deck, the file becomes one:
+ * its existing shapes move into a first page.
+ */
+export function addPage(src: string, doc: Doc, p: PageHeader & { after?: string; lines?: string[] }): string {
+  const body = (p.lines ?? []).map((l) => '  ' + l + '\n').join('');
+  const text = `${pageHeader(p)} {\n${body}}\n`;
+  if (!doc.deck) {
+    // wrap the current statements into page p1 (settings and styles stay at the top)
+    const first = Math.min(...[...doc.nodes, ...doc.edges].map((x) => x.spans.lines.from));
+    if (!Number.isFinite(first)) return insertBlock(src, text);
+    const head = src.slice(0, first);
+    const rest = src.slice(first).replace(/\s*$/, '');
+    const wrapped = rest
+      .split('\n')
+      .map((l) => (l.trim() ? '  ' + l : l))
+      .join('\n');
+    return `${head}page p1 {\n${wrapped}\n}\n\n${text}`;
+  }
+  const pages = doc.deck.pages;
+  const anchor = pages.find((x) => x.id === p.after) ?? pages[pages.length - 1];
+  return insertBlock(src, text, anchor?.lines);
+}
+
+export function removePage(src: string, doc: Doc, id: string): string {
+  const p = doc.deck?.pages.find((x) => x.id === id);
+  if (!p) return src;
+  // take one surrounding blank line with it
+  let { from, to } = p.lines;
+  if (src[to] === '\n') to++;
+  else if (from > 0 && src[from - 1] === '\n' && src[from - 2] === '\n') from--;
+  return src.slice(0, from) + src.slice(to);
+}
+
+/** Copy of a page right after it, with a new id. */
+export function duplicatePage(src: string, doc: Doc, id: string, newId: string): string {
+  const p = doc.deck?.pages.find((x) => x.id === id);
+  if (!p) return src;
+  const text = blockText(src, p.lines);
+  const head = src.slice(p.header.from, p.header.to);
+  const copy = text.replace(head, pageHeader({ id: newId, label: p.label, layout: src.slice(p.header.from, p.header.to).includes('layout=') ? p.layout : undefined }));
+  return insertBlock(src, copy, p.lines);
+}
+
+/** Move a page so that it ends up at `index` among the pages. */
+export function movePage(src: string, doc: Doc, id: string, index: number): string {
+  const pages = doc.deck?.pages ?? [];
+  const from = pages.findIndex((x) => x.id === id);
+  if (from < 0 || index === from) return src;
+  const p = pages[from];
+  const text = blockText(src, p.lines);
+  const without = removePage(src, doc, id);
+  const d = parse(without, viewOf(doc));
+  const rest = d.deck!.pages;
+  const to = Math.max(0, Math.min(index, rest.length));
+  if (to < rest.length) {
+    const before = rest[to].lines.from;
+    return without.slice(0, before) + text + '\n' + without.slice(before);
+  }
+  return insertBlock(without, text, rest[rest.length - 1]?.lines);
+}
+
+/** Rewrite a page's header (`page id "label" layout=x`); unspecified fields keep their value. */
+export function setPageHeader(src: string, doc: Doc, id: string, h: Partial<PageHeader>): string {
+  const p = doc.deck?.pages.find((x) => x.id === id);
+  if (!p) return src;
+  const written = /\slayout=/.test(src.slice(p.header.from, p.header.to));
+  const next: PageHeader = { id: h.id ?? p.id, label: h.label ?? p.label, layout: 'layout' in h ? h.layout : written ? p.layout : undefined };
+  return applyEdits(src, [{ ...p.header, insert: pageHeader(next) }]);
+}
+
+/** Add a layout block before the first page (or at EOF). */
+export function addLayout(src: string, doc: Doc, name: string, parent?: string, lines: string[] = []): string {
+  const text = `layout ${name}${parent ? ` extends ${parent}` : ''} {\n${lines.map((l) => '  ' + l + '\n').join('')}}\n`;
+  const deck = doc.deck;
+  const lastLayout = deck?.layouts[deck.layouts.length - 1];
+  if (lastLayout) return insertBlock(src, text, lastLayout.lines);
+  const first = deck?.pages[0];
+  if (first) return src.slice(0, first.lines.from) + text + '\n' + src.slice(first.lines.from);
+  return insertBlock(src, text);
 }

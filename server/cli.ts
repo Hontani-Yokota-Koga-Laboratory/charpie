@@ -3,10 +3,12 @@ import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { analyze, applyOps, issuesOut, measureNodes, type NodeMeasure } from './core';
+import { analyze, applyOps, issuesAll, measureNodes, type NodeMeasure } from './core';
+import { views } from '../src/dsl/parse';
+import type { View } from '../src/dsl/types';
 import { createApi } from './api';
 import { fontMeasure } from './measure';
-import { svgToPng } from './png';
+import { svgsToPdf, svgToPng } from './png';
 import { embedImages, Workspace } from './workspace';
 import { exportSvg, exportTikz, imageSources } from '../src/exportFormats';
 
@@ -18,8 +20,13 @@ Usage:
   charpie fix <file...>                        auto-resolve layout problems in place
   charpie measure <file...> [--json]           per shape: font size, text block vs box (slack), and the
                                                smallest box that still fits the label as written (fit)
-  charpie export <file> [--format svg|tikz|png] [--scale 2] [-o out]
-                                               png renders via headless Chromium (format inferred from -o x.png)
+  charpie export <file> [--format svg|tikz|png|pdf] [--scale 2] [--page ID | --layout NAME] [-o out]
+                                               png / pdf render via headless Chromium (format inferred from -o)
+                                               decks: svg/png/tikz export one page (default: the first),
+                                               pdf exports every page
+
+Decks (files with page / layout blocks) are checked, fixed and measured page by page.
+measure takes --page / --layout to pick one view (default: all).
   charpie hook                                 Claude Code PostToolUse hook (reads hook JSON on stdin)
 `;
 
@@ -48,10 +55,16 @@ function flag(args: string[], name: string): boolean {
 }
 
 function formatIssues(file: string, src: string) {
-  const a = analyze(src, fontMeasure);
-  const issues = issuesOut(a, src);
-  const lines = issues.map((i) => `${file}:${i.line ?? 1}: ${i.severity}: ${i.message} [${i.code}]`);
-  return { issues, lines, errors: issues.filter((i) => i.severity === 'error').length, ignored: a.ignored.length };
+  const { issues, ignored } = issuesAll(src, fontMeasure);
+  const lines = issues.map((i) => `${file}:${i.line ?? 1}: ${i.severity}: ${i.view ? `(${i.view}) ` : ''}${i.message} [${i.code}]`);
+  return { issues, lines, errors: issues.filter((i) => i.severity === 'error').length, ignored };
+}
+
+/** `--page ID` / `--layout NAME` (removed from args). */
+function viewArg(args: string[]): View | undefined {
+  const page = arg(args, '--page');
+  const layout = arg(args, '--layout');
+  return layout ? { layout } : page ? { page } : undefined;
 }
 
 async function serve(args: string[]) {
@@ -93,9 +106,9 @@ async function serve(args: string[]) {
 
 /** Image shapes whose `src=` file does not exist (relative to the .charpie file). */
 function missingImages(file: string, src: string): string[] {
-  const a = analyze(src, fontMeasure);
   const dir = path.dirname(path.resolve(file));
-  return a.layout.nodes
+  const nodes = views(src).flatMap((v) => analyze(src, fontMeasure, v).layout.nodes.filter((n) => !n.def.locked || (v && 'layout' in v)));
+  return [...new Map(nodes.map((n) => [n.def.spans.stmt.from, n])).values()]
     .filter((n) => n.kind === 'image')
     .filter((n) => !n.style.src || (!/^(https?:|data:)/.test(n.style.src) && !fs.existsSync(path.resolve(dir, n.style.src))))
     .map((n) => `${file}:${n.def.line + 1}: warning: 画像「${n.id}」の${n.style.src ? `ファイル ${n.style.src} がありません` : ' src= がありません'} [image]`);
@@ -123,7 +136,8 @@ function check(args: string[]) {
 function fix(args: string[]) {
   for (const f of args) {
     const src = fs.readFileSync(f, 'utf8');
-    const { src: out } = applyOps(src, [{ op: 'fix' }], fontMeasure);
+    let out = src;
+    for (const v of views(src)) out = applyOps(out, [{ op: 'fix' }], fontMeasure, v).src;
     if (out !== src) fs.writeFileSync(f, out);
     const r = formatIssues(f, out);
     console.log(r.lines.length ? r.lines.join('\n') : `${f}: ok${out !== src ? ' (fixed)' : ''}`);
@@ -134,8 +148,13 @@ function measureCmd(args: string[]) {
   const asJson = flag(args, '--json');
   if (!args.length) throw new Error('usage: charpie measure <file...>');
   const out: Record<string, NodeMeasure[]> = {};
+  const only = viewArg(args);
   for (const f of args) {
-    const rows = measureNodes(analyze(fs.readFileSync(f, 'utf8'), fontMeasure), fontMeasure);
+    const src = fs.readFileSync(f, 'utf8');
+    const rows = (only ? [only] : views(src)).flatMap((v) => {
+      const a = analyze(src, fontMeasure, v);
+      return measureNodes(a, fontMeasure).filter((r) => !a.doc.nodeMap.get(r.id)?.locked);
+    });
     if (asJson) {
       out[f] = rows;
       continue;
@@ -156,10 +175,25 @@ function measureCmd(args: string[]) {
 
 async function exportCmd(args: string[]) {
   const out = arg(args, '-o') ?? arg(args, '--out');
-  const fmt = arg(args, '--format', '-f') ?? (out?.endsWith('.png') ? 'png' : out?.endsWith('.tex') ? 'tikz' : 'svg');
-  const a = analyze(fs.readFileSync(args[0], 'utf8'), fontMeasure);
-  const images = embedImages(path.dirname(path.resolve(args[0])), imageSources(a.layout));
-  const svg = () => exportSvg(a.layout, '#ffffff', (s) => images.get(s));
+  const fmt = arg(args, '--format', '-f') ?? (out?.endsWith('.png') ? 'png' : out?.endsWith('.tex') ? 'tikz' : out?.endsWith('.pdf') ? 'pdf' : 'svg');
+  const view = viewArg(args);
+  const src = fs.readFileSync(args[0], 'utf8');
+  const dir = path.dirname(path.resolve(args[0]));
+  const svgOf = (v: View | undefined) => {
+    const l = analyze(src, fontMeasure, v).layout;
+    const images = embedImages(dir, imageSources(l));
+    return exportSvg(l, '#ffffff', (s) => images.get(s));
+  };
+  if (fmt === 'pdf') {
+    const pages = view ? [view] : views(src).filter((v) => !v || 'page' in v);
+    const pdf = await svgsToPdf(pages.map(svgOf));
+    if (out) fs.writeFileSync(out, pdf);
+    else process.stdout.write(pdf);
+    if (out) console.error(`${out}: ${pages.length} page${pages.length === 1 ? '' : 's'}`);
+    return;
+  }
+  const a = analyze(src, fontMeasure, view);
+  const svg = () => svgOf(view);
   if (fmt === 'png') {
     const png = await svgToPng(svg(), Number(arg(args, '--scale') ?? 2) || 2);
     if (out) fs.writeFileSync(out, png);

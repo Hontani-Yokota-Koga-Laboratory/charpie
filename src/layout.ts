@@ -106,6 +106,8 @@ export interface Layout {
   nodeMap: Map<string, NodeLayout>;
   edges: EdgeLayout[];
   edgeMap: Map<string, EdgeLayout>;
+  /** the page (`set canvas=` / decks): exports cover exactly this box */
+  frame?: Box;
 }
 
 export const NODE_DEFAULTS: NodeStyle = {
@@ -538,7 +540,8 @@ export function computeLayout(doc: Doc, measure: Measure, overrides?: Map<string
     const ends = edgeEnds(doc, e, nodeMap);
     if (ends) edges.push(layoutEdge(doc, e, ends.a, ends.b, measure, ends.free));
   }
-  // paint order: containers first, then declaration order
-  nodes.sort((p, q) => p.depth - q.depth || p.def.line - q.def.line);
-  return { nodes, nodeMap, edges, edgeMap: new Map(edges.map((e) => [e.key, e])) };
+  // paint order: containers first, then the page's layout, then declaration order
+  nodes.sort((p, q) => p.depth - q.depth || Number(!p.def.locked) - Number(!q.def.locked) || p.def.line - q.def.line);
+  const frame = doc.canvas && { x: 0, y: 0, w: doc.canvas.w, h: doc.canvas.h };
+  return { nodes, nodeMap, edges, edgeMap: new Map(edges.map((e) => [e.key, e])), frame };
 }

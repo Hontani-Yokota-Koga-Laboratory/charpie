@@ -199,7 +199,7 @@ function NodeInspector({ nodes, doc }: { nodes: State['layout']['nodes']; doc: D
       {single && (
         <div className="section">
           <div className="section-label">{single.kind === 'image' ? '説明（代替テキスト・図には描かれません）' : 'ラベル'}</div>
-          <LiveText multiline rows={2} key={single.id} value={single.def.label} onChange={(v) => edit((src, d) => setNodeLabel(src, d, single.id, v))} />
+          <LiveText multiline rows={2} key={single.id} value={single.def.labelSource ?? single.def.label} onChange={(v) => edit((src, d) => setNodeLabel(src, d, single.id, v))} />
         </div>
       )}
 

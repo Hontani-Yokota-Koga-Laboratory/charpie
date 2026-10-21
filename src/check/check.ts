@@ -4,7 +4,7 @@ import { boxContains, boxesIntersect, clipPoly, outline, polyBox, polySeparation
 import type { Layout, NodeLayout } from '../layout';
 import { renderMath, splitMath } from '../text/math';
 
-export type IssueCode = 'text-covered' | 'overlap' | 'too-close' | 'text-overflow' | 'containment' | 'edge-through' | 'label-overlap' | 'self-loop' | 'tex';
+export type IssueCode = 'text-covered' | 'overlap' | 'too-close' | 'text-overflow' | 'containment' | 'edge-through' | 'label-overlap' | 'self-loop' | 'tex' | 'off-page';
 
 export interface Issue {
   id: string;
@@ -30,6 +30,7 @@ export const IGNORE_NAME: Record<IssueCode, string> = {
   'self-loop': 'loop',
   'text-covered': 'covered',
   tex: 'tex',
+  'off-page': 'page',
 };
 
 const ignoreSet = (v: string | undefined): Set<string> => new Set((v ?? '').split(',').map((x) => x.trim()).filter(Boolean));
@@ -67,6 +68,7 @@ export const ISSUE_LABEL: Record<IssueCode, string> = {
   'self-loop': '自己ループ',
   'text-covered': '文字が子に隠れる',
   tex: 'TeX エラー',
+  'off-page': 'ページ外',
 };
 
 const allowsOverlap = (n: NodeLayout) => n.def.attrs.overlap === 'allow' || n.def.attrs.overlap === 'true';
@@ -229,7 +231,21 @@ export function checkAll(doc: Doc, layout: Layout): Issue[] {
     }
   }
 
+  // 6. shapes leaving the page (`set canvas=` / decks)
+  if (doc.canvas) {
+    const page = { x: 0, y: 0, w: doc.canvas.w, h: doc.canvas.h };
+    for (const n of nodes) {
+      if (n.parents.length || boxContains(page, n.box, 0.5)) continue;
+      issues.push({ id: `page:${n.id}`, code: 'off-page', severity: 'error', message: `「${n.id}」がページ（${page.w}x${page.h}）の外にはみ出しています`, nodes: [n.id], edges: [] });
+    }
+  }
+
   for (const i of issues) if (isIgnored(i, layout, doc)) i.ignored = true;
+  // problems among inherited shapes belong to the layout that owns them (reported there once)
+  if (doc.deck) {
+    const mine = (i: Issue) => i.nodes.some((id) => !doc.nodeMap.get(id)?.locked) || i.edges.some((k) => !layout.edgeMap.get(k)?.def.locked);
+    return issues.filter(mine);
+  }
   return issues;
 }
 

@@ -217,11 +217,12 @@ export function EdgeLabel({ e, bg, interactive }: { e: EdgeLayout; bg: string; i
 
 /** Static diagram (used for export). */
 export function DiagramSvg({ layout, bg, padding = 24, images }: { layout: Layout; bg: string | null; padding?: number; images?: ImageHref }) {
-  const b = diagramBounds(layout);
-  const x = b.x - padding,
-    y = b.y - padding,
-    w = b.w + padding * 2,
-    h = b.h + padding * 2;
+  const b = layout.frame ?? diagramBounds(layout);
+  const pad = layout.frame ? 0 : padding;
+  const x = b.x - pad,
+    y = b.y - pad,
+    w = b.w + pad * 2,
+    h = b.h + pad * 2;
   const svg = (
     <svg xmlns="http://www.w3.org/2000/svg" viewBox={`${x} ${y} ${w} ${h}`} width={w} height={h} fontFamily={FONT_FAMILY}>
       {bg && <rect x={x} y={y} width={w} height={h} fill={bg} />}

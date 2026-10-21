@@ -3,7 +3,8 @@ import { hashText } from '../src/hash';
 import fs from 'node:fs';
 import path from 'node:path';
 import { exportSvg, exportTikz, imageSources } from '../src/exportFormats';
-import { analyze, applyOps, issuesOut, measureNodes, summarize, type IssueOut, type Op } from './core';
+import { analyze, applyOps, issuesAll, measureNodes, summarize, viewParam, type IssueOut, type Op } from './core';
+import { views } from '../src/dsl/parse';
 import { helpText } from './help';
 import { fontMeasure } from './measure';
 import { embedImages, HttpError, IMAGE_MIME, type BrowserState, type Workspace } from './workspace';
@@ -47,11 +48,15 @@ function json<T>(raw: string): T {
   }
 }
 
-/** Issues for a file: the browser's (exact canvas metrics) when it has this exact text open, else server-computed. */
+/**
+ * Issues for a file: the browser's (exact canvas metrics) when it has this exact text open, else server-computed.
+ * Decks are always checked here, page by page (the browser only checks the page it shows).
+ */
 function currentIssues(ws: Workspace, file: string, src: string): { source: 'browser' | 'server'; issues: IssueOut[] } {
   const b = ws.browser;
-  if (b && b.file === file && b.hash === hashText(src) && Date.now() - b.at < 10 * 60_000) return { source: 'browser', issues: b.issues as IssueOut[] };
-  return { source: 'server', issues: issuesOut(analyze(src, fontMeasure), src) };
+  const deck = views(src)[0] !== undefined;
+  if (!deck && b && b.file === file && b.hash === hashText(src) && Date.now() - b.at < 10 * 60_000) return { source: 'browser', issues: b.issues as IssueOut[] };
+  return { source: 'server', issues: issuesAll(src, fontMeasure).issues };
 }
 
 function writeResult(ws: Workspace, file: string, src: string, created: string[] = []) {
@@ -82,7 +87,7 @@ export function createApi(ws: Workspace) {
             files: ws.list().map((name) => {
               const src = ws.read(name);
               const a = analyze(src, fontMeasure);
-              return { name, nodes: a.doc.nodes.length, edges: a.doc.edges.length, errors: issuesOut(a, src).filter((i) => i.severity === 'error').length };
+              return { name, nodes: a.doc.nodes.length, edges: a.doc.edges.length, pages: a.doc.deck?.pages.length ?? null, errors: issuesAll(src, fontMeasure).issues.filter((i) => i.severity === 'error').length };
             }),
           });
 
@@ -97,7 +102,7 @@ export function createApi(ws: Workspace) {
         case 'GET /api/doc': {
           const file = ws.pick(q.get('file'));
           const src = ws.read(file);
-          const s = summarize(src, analyze(src, fontMeasure));
+          const s = summarize(src, analyze(src, fontMeasure, viewParam(q)));
           const ci = currentIssues(ws, file, src);
           return send(res, 200, { file, hash: hashText(src), ...s, issues: ci.issues, issuesSource: ci.source });
         }
@@ -123,7 +128,7 @@ export function createApi(ws: Workspace) {
 
         case 'GET /api/measure': {
           const file = ws.pick(q.get('file'));
-          return send(res, 200, { file, nodes: measureNodes(analyze(ws.read(file), fontMeasure), fontMeasure) });
+          return send(res, 200, { file, nodes: measureNodes(analyze(ws.read(file), fontMeasure, viewParam(q)), fontMeasure) });
         }
 
         case 'GET /api/issues': {
@@ -138,12 +143,12 @@ export function createApi(ws: Workspace) {
           const body = json<Op | Op[] | { ops: Op[] }>(await readBody(req));
           const ops = Array.isArray(body) ? body : 'ops' in body ? body.ops : [body];
           const before = ws.read(file);
-          const { src, created } = applyOps(before, ops, fontMeasure);
+          const { src, created } = applyOps(before, ops, fontMeasure, viewParam(q));
           if (q.get('strict')) {
-            const errs = (s: string) => issuesOut(analyze(s, fontMeasure), s).filter((i) => i.severity === 'error').length;
+            const errs = (s: string) => issuesAll(s, fontMeasure).issues.filter((i) => i.severity === 'error').length;
             const nb = errs(before),
               na = errs(src);
-            if (na > nb) throw new HttpError(409, `rejected: errors would increase ${nb} → ${na}`, { issues: issuesOut(analyze(src, fontMeasure), src), preview: src });
+            if (na > nb) throw new HttpError(409, `rejected: errors would increase ${nb} → ${na}`, { issues: issuesAll(src, fontMeasure).issues, preview: src });
           }
           if (src !== before) {
             ws.write(file, src);
@@ -154,7 +159,7 @@ export function createApi(ws: Workspace) {
 
         case 'GET /api/export': {
           const file = ws.pick(q.get('file'));
-          const a = analyze(ws.read(file), fontMeasure);
+          const a = analyze(ws.read(file), fontMeasure, viewParam(q));
           const fmt = q.get('format') ?? 'svg';
           if (fmt === 'svg') {
             const images = embedImages(path.dirname(ws.resolve(file).abs), imageSources(a.layout), ws.root);

@@ -32,6 +32,8 @@ export interface StmtSpans {
   op?: Span;
   fromRef?: Span;
   toRef?: Span;
+  /** end of the statement head when it is not the id (`slot title text` → after `text`) */
+  head?: Span;
 }
 
 export interface NodeDef {
@@ -47,6 +49,14 @@ export interface NodeDef {
   classes: string[];
   line: number;
   spans: StmtSpans;
+  /** comes from the page's layout: shown but not editable in this view */
+  locked?: boolean;
+  /** the label as written when `label` shows `{page}` / `{pages}` / `{title}` filled in */
+  labelSource?: string;
+  /** slot name: a layout's `slot` (layout view) or the page content filling it (page view) */
+  slot?: string;
+  /** `table` / `list`: the raw lines between `{` and `}` */
+  body?: { text: string; span: Span };
 }
 
 /** A free arrow end: absolute `(x, y)` or `+(dx, dy)` relative to the other end. */
@@ -76,6 +86,8 @@ export interface EdgeDef {
   classes: string[];
   line: number;
   spans: StmtSpans;
+  /** comes from the page's layout (read-only in a page view) */
+  locked?: boolean;
 }
 
 export interface StyleDef {
@@ -110,6 +122,56 @@ export interface Doc {
   /** explicitly written settings, in source order */
   settingsAttrs: Record<string, string>;
   diagnostics: Diagnostic[];
+  /** `set canvas=1280x720`: the page frame (always present in a deck) */
+  canvas?: { w: number; h: number };
+  /** present when the file has `page` / `layout` blocks; the doc is then one page (or layout) of it */
+  deck?: DeckInfo;
+}
+
+/** Which part of a deck a Doc shows. */
+export type View = { page: string } | { layout: string };
+
+interface BlockInfo {
+  line: number;
+  /** the header statement (`page intro "背景" layout=base`) */
+  header: Span;
+  /** header line through the closing `}` line */
+  lines: Span;
+  /** where a new statement for this block goes (start of the closing `}` line) */
+  insertAt: number;
+  /** indentation of the block's statements */
+  indent: string;
+}
+
+export interface PageInfo extends BlockInfo {
+  id: string;
+  label: string;
+  /** resolved layout name (explicit `layout=`, else `default` when it exists) */
+  layout?: string;
+}
+
+export interface LayoutInfo extends BlockInfo {
+  name: string;
+  extends?: string;
+  slots: string[];
+}
+
+export interface DeckInfo {
+  pages: PageInfo[];
+  layouts: LayoutInfo[];
+  /** the view this Doc was built for (after falling back to an existing one) */
+  view: View;
+  /** block of this view: where new statements are inserted */
+  block?: PageInfo | LayoutInfo;
+  /** page view: slots of the layout the page doesn't fill yet (editor-only hints) */
+  placeholders: NodeDef[];
+}
+
+export const DEFAULT_CANVAS = { w: 1280, h: 720 };
+
+export function sameView(a: View | undefined, b: View | undefined): boolean {
+  if (!a || !b) return a === b;
+  return 'page' in a ? 'page' in b && a.page === b.page : 'layout' in b && a.layout === b.layout;
 }
 
 export const DEFAULT_SETTINGS: Settings = {

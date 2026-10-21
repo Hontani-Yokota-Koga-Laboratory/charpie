@@ -1,6 +1,6 @@
 import { descendants, parse } from '../dsl/parse';
 import { setEdgesAttr, setNodesAttr, setNodesGeom, type Geom } from '../dsl/patch';
-import type { Doc } from '../dsl/types';
+import type { Doc, View } from '../dsl/types';
 import { outline, polySeparation, polylineHitsPoly, shrinkPoly, boxesIntersect, polyBox, type Box } from '../geom/geom';
 import { computeLayout, edgeEnds, layoutEdge, layoutNode } from '../layout';
 import type { Measure } from '../text/fit';
@@ -11,6 +11,8 @@ export interface FixOptions {
   pinned?: Set<string>;
   /** only fix these issue ids (default: all) */
   only?: Set<string>;
+  /** deck: the page / layout to fix (layout shapes are never moved from a page) */
+  view?: View;
 }
 
 const snap = (v: number) => Math.round(v);
@@ -22,24 +24,24 @@ const snap = (v: number) => Math.round(v);
 export function autoFix(src: string, measure: Measure, opts: FixOptions = {}): string {
   let out = src;
   for (let pass = 0; pass < 5; pass++) {
-    const next = fixOnce(out, measure, pass === 0 ? opts : { pinned: opts.pinned });
+    const next = fixOnce(out, measure, pass === 0 ? opts : { pinned: opts.pinned, view: opts.view });
     if (next === out) break;
     out = next;
-    const d = parse(out);
+    const d = parse(out, opts.view);
     if (!checkLayout(d, computeLayout(d, measure)).some((i) => i.severity === 'error')) break;
   }
   return out;
 }
 
 function fixOnce(src: string, measure: Measure, opts: FixOptions): string {
-  let doc = parse(src);
+  let doc = parse(src, opts.view);
   const issues = checkLayout(doc, computeLayout(doc, measure)).filter((i) => !opts.only || opts.only.has(i.id));
   if (!issues.length) return src;
 
   const want = (code: Issue['code']) => issues.some((i) => i.code === code);
   const geoms = new Map<string, Box>(doc.nodes.map((n) => [n.id, { x: n.x, y: n.y, w: n.w, h: n.h }]));
   const touched = new Set<string>();
-  const pinned = opts.pinned ?? new Set<string>();
+  const pinned = new Set([...(opts.pinned ?? []), ...doc.nodes.filter((n) => n.locked).map((n) => n.id)]);
   const scope = (code: Issue['code']) => new Set(issues.filter((i) => i.code === code).flatMap((i) => i.nodes));
 
   // 1. grow nodes whose text doesn't fit (target: fits at a readable 12px or fontmin)
@@ -83,6 +85,16 @@ function fixOnce(src: string, measure: Measure, opts: FixOptions): string {
       touched.add(t);
     }
   };
+
+  // shapes off the page: slide them back inside (never past the top-left corner)
+  if (doc.canvas) {
+    for (const id of scope('off-page')) {
+      const g = geoms.get(id)!;
+      const dx = g.x < 0 ? -g.x : Math.min(0, doc.canvas.w - (g.x + g.w));
+      const dy = g.y < 0 ? -g.y : Math.min(0, doc.canvas.h - (g.y + g.h));
+      if (dx || dy) moveTree(id, Math.max(dx, -g.x), Math.max(dy, -g.y));
+    }
+  }
 
   // covered container labels: push the parent's top edge up to make room
   const toTop: string[] = [];
@@ -216,11 +228,11 @@ function fixOnce(src: string, measure: Measure, opts: FixOptions): string {
     const g: Record<string, Partial<Geom>> = {};
     for (const id of touched) g[id] = geoms.get(id)!;
     out = setNodesGeom(out, doc, g);
-    doc = parse(out);
+    doc = parse(out, opts.view);
   }
   if (toTop.length) {
     out = setNodesAttr(out, doc, toTop, 'valign', 'top');
-    doc = parse(out);
+    doc = parse(out, opts.view);
   }
 
   // edges through nodes: try bends / orthogonal routing
@@ -250,11 +262,11 @@ function fixOnce(src: string, measure: Measure, opts: FixOptions): string {
       if (hit) {
         for (const [k, v] of Object.entries(hit)) {
           out = setEdgesAttr(out, doc, [key], k, v);
-          doc = parse(out);
+          doc = parse(out, opts.view);
         }
         if (hit.route === 'ortho') {
           out = setEdgesAttr(out, doc, [key], 'bend', undefined);
-          doc = parse(out);
+          doc = parse(out, opts.view);
         }
       }
     }

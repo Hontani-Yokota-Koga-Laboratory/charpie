@@ -10,6 +10,8 @@ export interface IssueOut {
   edges: string[];
   /** 1-based line of the first involved statement */
   line?: number;
+  /** deck: where it was found (`page intro` / `layout base`) */
+  view?: string;
 }
 
 export function issuesOut(a: { doc: Doc; issues: Issue[] }, src: string): IssueOut[] {
