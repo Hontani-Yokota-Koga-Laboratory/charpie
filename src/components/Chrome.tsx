@@ -664,8 +664,45 @@ api -> cache route=curve bend=40 dash=dashed`}</pre>
               <td>rect round ellipse diamond trap para hex text</td>
               <td>矩形 / 角丸 / 楕円 / ひし形 / 台形 / 平行四辺形 / 六角形 / 枠なしテキスト</td>
             </tr>
+            <tr>
+              <td>cross plus image</td>
+              <td>⊗ / ⊕ / 画像（src= に .charpie を指定すると別の図をそのまま埋め込み、#ページID も可）</td>
+            </tr>
+            <tr>
+              <td>table list</td>
+              <td>表 / 箇条書き。中身は {'{ }'} の中に行で書く（下の「表と箇条書き」）</td>
+            </tr>
           </tbody>
         </table>
+        <h4>表と箇条書き</h4>
+        <pre>{`table res at (80, 160) size 700x220 align=l,r {
+  | 手法   | 精度 |
+  |--------|-----:|        # 見出しの区切り（:--: で寄せも指定）
+  | **提案** | **82.1** |  # セル全体を ** で囲むと太字
+}                         # cols=2,1 列幅比 · rules=booktabs|grid|none
+
+list pts at (40, 140) size 600x400 {
+  - 項目                  # - * 1. で始める
+    - 2 文字下げで入れ子
+}`}</pre>
+        <h4>スライド（page / layout）</h4>
+        <pre>{`set canvas=1280x720
+layout default {                       # 全ページ共通（layout= なしのページに適用）
+  text pageno "{page} / {pages}" at (1100, 680) size 140x30
+  slot title "タイトル" at (40, 30) size 1200x70   # 差し込み枠
+}
+layout two extends default {           # 継承
+  slot left  at (40, 120) size 580x540
+  slot right list at (660, 120) size 580x540
+}
+page intro "はじめに" layout=two {
+  title "研究背景"                       # スロットを埋める
+  right {
+    - 項目
+  }
+  hide pageno                          # このページだけ消す
+}`}</pre>
+        <div style={{ color: 'var(--muted)', fontSize: 12.5 }}>ページではレイアウト由来の図形は薄く表示され、動かせません。左のレイアウト一覧から「レイアウト編集」に入ると全ページ分を直せます。F5 で発表、エクスポートから全ページの PDF。</div>
         <h4>図形の属性</h4>
         <table>
           <tbody>
@@ -692,7 +729,7 @@ api -> cache route=curve bend=40 dash=dashed`}</pre>
         <table>
           <tbody>
             <tr><td>ignore=all</td><td>この図形/矢印が関わる警告をすべて出さない</td></tr>
-            <tr><td>ignore=overlap,through</td><td>種類を指定: overlap gap text contain covered through label loop</td></tr>
+            <tr><td>ignore=overlap,through</td><td>種類を指定: overlap gap text contain covered through label loop tex page</td></tr>
           </tbody>
         </table>
         <h4>整合性チェック（常時）</h4>
@@ -706,7 +743,9 @@ api -> cache route=curve bend=40 dash=dashed`}</pre>
         <h4>操作</h4>
         <table>
           <tbody>
-            <tr><td>V H A / R U O D P L X T</td><td>選択 / 手のひら / 矢印 / 各図形ツール</td></tr>
+            <tr><td>V H A / R U O D P L X T B G</td><td>選択 / 手のひら / 矢印 / 各図形ツール（B 箇条書き・G 表）</td></tr>
+            <tr><td>/</td><td>挿入パレット（名前で探して置く）。ツールバーのグループは右クリックで種類を選ぶ</td></tr>
+            <tr><td>F5</td><td>発表（← → で移動、Esc で終了）</td></tr>
             <tr><td>ダブルクリック</td><td>文字を編集（空白部分なら図形を追加）</td></tr>
             <tr><td>ホバー時の ● をドラッグ</td><td>矢印を引く（何もない所で離すと図形ごと追加）</td></tr>
             <tr><td>Shift / Alt (ドラッグ中)</td><td>軸固定・比率固定 / スナップ無効・中心から拡縮</td></tr>

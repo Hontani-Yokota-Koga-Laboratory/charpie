@@ -8,7 +8,7 @@ import { autocompletion, closeBrackets, completionKeymap, type CompletionContext
 import { tags as t } from '@lezer/highlight';
 import { Check, Copy, FileCode } from 'lucide-react';
 import { useStore } from '../store';
-import { SHAPE_KINDS } from '../dsl/types';
+import { SHAPE_KINDS, sameView } from '../dsl/types';
 import { EDGE_ATTRS, NODE_ATTRS } from '../dsl/parse';
 import type { Doc } from '../dsl/types';
 import type { Issue } from '../check/check';
@@ -17,7 +17,9 @@ const External = Annotation.define<boolean>();
 
 // ───────────── language ─────────────
 const KINDS = new Set<string>([...SHAPE_KINDS, 'rectangle', 'box', 'rounded', 'circle', 'oval', 'trapezoid', 'parallelogram', 'hexagon', 'otimes', 'oplus', 'label', 'img', 'picture']);
-const KEYWORDS = new Set(['style', 'set', 'at', 'size']);
+const KEYWORDS = new Set(['style', 'set', 'at', 'size', 'extends']);
+/** keywords only at the start of a statement (they are also fine as ids elsewhere) */
+const HEAD_KEYWORDS = new Set(['page', 'layout', 'slot', 'hide']);
 
 interface LexState {
   pos: number; // token index within statement
@@ -59,6 +61,7 @@ const charpieLang = StreamLanguage.define<LexState>({
       state.pos++;
       if (stream.peek() === '=' || (state.inStyle && /^\s*:/.test(stream.string.slice(stream.pos)))) return 'propertyName';
       if (first && KINDS.has(w)) return 'typeName';
+      if (first && HEAD_KEYWORDS.has(w)) return 'keyword';
       if (KEYWORDS.has(w)) return 'keyword';
       if (stream.string[stream.start - 1] === '.') return 'className';
       return 'variableName';
@@ -170,6 +173,11 @@ function complete(ctx: CompletionContext): CompletionResult | null {
         ...SHAPE_KINDS.map((k) => ({ label: k, type: 'type', detail: '図形' })),
         { label: 'style', type: 'keyword' },
         { label: 'set', type: 'keyword' },
+        { label: 'page', type: 'keyword', detail: 'ページ', apply: 'page p1 {\n}' },
+        { label: 'layout', type: 'keyword', detail: '共通レイアウト', apply: 'layout default {\n}' },
+        { label: 'slot', type: 'keyword', detail: 'レイアウトの差し込み枠' },
+        { label: 'hide', type: 'keyword', detail: 'このページだけレイアウトの図形を消す' },
+        ...(doc.deck && 'page' in doc.deck.view ? doc.deck.placeholders.map((p) => ({ label: p.id, type: 'variable', detail: '空のスロット' })) : []),
         ...doc.nodes.map((n) => ({ label: n.id, type: 'variable', detail: n.label.split('\n')[0] })),
       ],
     };
@@ -325,11 +333,19 @@ export function CodePanel() {
             // caret → select the statement under it
             if (u.selectionSet && !u.docChanged && u.view.hasFocus) {
               const pos = u.state.selection.main.head;
-              const d = s.doc;
+              // deck: follow the caret into another page / layout
+              const deck = s.doc.deck;
+              if (deck) {
+                const p = deck.pages.find((x) => pos >= x.lines.from && pos < x.lines.to);
+                const l = p ? undefined : deck.layouts.find((x) => pos >= x.lines.from && pos < x.lines.to);
+                const v = p ? { page: p.id } : l ? { layout: l.name } : undefined;
+                if (v && !sameView(v, deck.view)) s.setPage(v);
+              }
+              const d = useStore.getState().doc;
               const n = d.nodes.find((x) => pos >= x.spans.lines.from && pos <= x.spans.stmt.to);
               const e = n ? undefined : d.edges.find((x) => pos >= x.spans.lines.from && pos <= x.spans.stmt.to);
-              if (n) s.select({ nodes: [n.id] });
-              else if (e) s.select({ edges: [e.key] });
+              if (n && !n.locked) s.select({ nodes: [n.id] });
+              else if (e && !e.locked) s.select({ edges: [e.key] });
             }
           }),
         ],
@@ -351,6 +367,10 @@ export function CodePanel() {
         }
       }
       if (s.issues !== prev.issues || s.doc !== prev.doc) syncDiag();
+      // a page picked elsewhere: bring its block into view
+      if (s.page !== prev.page && !view.hasFocus && s.doc.deck?.block && s.doc.deck.block.lines.from <= view.state.doc.length) {
+        view.dispatch({ effects: EditorView.scrollIntoView(s.doc.deck.block.lines.from, { y: 'start', yMargin: 24 }) });
+      }
       if (s.selection !== prev.selection || s.doc !== prev.doc) {
         const ranges = selectionRanges(s.doc, s.selection);
         const effects: StateEffect<unknown>[] = [setSelLines.of(ranges)];

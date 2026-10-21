@@ -17,6 +17,9 @@ GET  /api/selection                     what the user has selected in the browse
 GET  /api/export?file=NAME&format=svg   or format=tikz (svg embeds the pictures of image shapes)
 GET  /api/asset?file=NAME&src=PATH      a picture referenced by an image shape (src relative to the .charpie)
 \`file\` may be omitted: defaults to the file open in the browser (or the only file).
+Decks (files with page / layout blocks): add \`&page=ID\` or \`&layout=NAME\` to doc / measure / export / ops
+(default: the first page). /api/issues checks every page and layout; each issue has "view": "page ID".
+/api/doc includes "deck": pages, layouts, the view and its empty slots; shapes from the layout are "locked".
 
 ## Write
 PUT  /api/doc?file=NAME                 body = full .charpie text (creates the file if missing)
@@ -24,8 +27,8 @@ POST /api/ops?file=NAME                 body = one op or a JSON array of ops (ap
      add "?strict=1" to reject the change (409) if it introduces new errors
 POST /api/asset?file=NAME&name=x.png   body = image bytes (Content-Type image/png|jpeg|gif|webp|svg+xml);
                                         saved as assets/x-<hash>.png next to the .charpie → {"src":"assets/…"}
-POST /api/open    {"file":"NAME"}       show this file in the user's browser
-POST /api/select  {"nodes":["id"],"edges":["a->b#0"]}   highlight shapes for the user
+POST /api/open    {"file":"NAME","page":"ID"}            show this file (and page / "layout") in the user's browser
+POST /api/select  {"nodes":["id"],"edges":["a->b#0"],"page":"ID"}   highlight shapes for the user
 
 Ops:
   {"op":"add","kind":"rect","id":"api","label":"API","x":0,"y":0,"w":140,"h":60}
@@ -44,6 +47,12 @@ Ops:
   {"op":"stack","ids":["a","b","c"],"axis":"v","gap":24}
   {"op":"fix"}                                             # auto-resolve all layout problems
   {"op":"setting","key":"gap","value":12}
+  decks:
+  {"op":"add-page","id":"p4","label":"結果","layout":"two","after":"p3"}   # a plain diagram becomes page p1 + this
+  {"op":"duplicate-page","id":"p3","to":"p3b"}   {"op":"move-page","id":"p3","index":0}   {"op":"remove-page","id":"p3"}
+  {"op":"set-page","id":"p3","label":"新しい名前","layout":"two","rename":"intro"}     # layout null = none
+  {"op":"add-layout","name":"wide","extends":"default"}
+  shape ops apply to the page / layout given by ?page= / ?layout= ; a layout's shapes are read-only from a page
 
 Every write responds with {"ok":true,"file","created":[ids],"issues":[…],"errors":N}.
 After writing, check "errors" — fix overlaps/overflow with {"op":"fix"} or by adjusting geometry.
@@ -70,8 +79,40 @@ After writing, check "errors" — fix overlaps/overflow with {"op":"fix"} or by 
               halign(left|center|right) rotate(90|-90|180: turn the label; the shape stays upright)
   edge attrs: route bend stroke lw dash text font fromat toat (0..1: slide a port along its side)
   ignore=all | ignore=overlap,through,...   (shapes, arrows and styles) silence checks that involve this item;
-              names: overlap gap text contain covered through label loop tex
+              names: overlap gap text contain covered through label loop tex page
   x,y = top-left corner, y grows downward. Text auto-shrinks to fit (fontmin..fontmax).
+
+  table t at (80, 160) size 700x220 align=l,r,r {      # Markdown rows; |---| marks the header (and :--: alignment)
+    | Method | Acc (%) | Params |                       # cols=2,1,1 relative widths · header=N · rules=booktabs|grid|none
+    |--------|--------:|-------:|                       # **cell** = bold cell; $...$ works in cells
+    | Ours   | 82.1    | 22M    |
+  }
+  list l at (40, 140) size 600x400 {                    # - / * / 1. items, nest with 2 more spaces;
+    - first                                             # **whole item** = bold; one font size fitted to the box
+      - nested
+  }
+  image fig at (0, 0) size 600x300 src="other.charpie#page"   # another diagram drawn inline (fit=contain|cover)
+
+## Slides: decks
+  set canvas=1280x720                    # the page (default 1280x720); shapes must stay inside (check: page)
+  layout default {                       # shared by every page (a page without layout= uses "default")
+    text pageno "{page} / {pages}" at (1100, 680) size 140x30     # {page} {pages} {title} are filled in
+    slot title "タイトル" at (40, 30) size 1200x70 .title           # slot NAME [kind] ["sample"] at … size …
+  }
+  layout two extends default {           # inherits default's shapes and slots
+    slot left at (40, 120) size 580x540
+    slot right list at (660, 120) size 580x540
+  }
+  page intro "はじめに" layout=two {       # page ID ["name"] [layout=NAME] { … }
+    title "研究背景"                       # fill a slot: SLOT ["text"] [at …] [size …] [attrs]
+    right {                              # a block slot (list / table) takes its lines in { }
+      - 項目
+    }
+    rect a "自由配置" at (100, 200) size 200x80   # pages hold ordinary shapes and arrows too
+    hide pageno                          # drop layout shapes on this page only
+  }
+  Shape ids are per page. CLI: check / fix / measure go page by page;
+  export --page ID (svg/png/tikz) · export -o deck.pdf (all pages)
 
 ## Layout rules that are checked continuously
   - shapes must not overlap (except parent/child via in=, or overlap=allow); keep >= gap apart
