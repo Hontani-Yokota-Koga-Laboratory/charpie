@@ -12,9 +12,10 @@ export async function exportSvgStandalone(layout: Layout, bg: string | null = '#
 
 export async function exportPng(layout: Layout, scale = 2, bg = '#ffffff'): Promise<Blob> {
   const svg = await exportSvgStandalone(layout, bg);
-  const b = diagramBounds(layout);
-  const w = Math.ceil((b.w + 48) * scale),
-    h = Math.ceil((b.h + 48) * scale);
+  const b = layout.frame ?? diagramBounds(layout);
+  const pad = layout.frame ? 0 : 48;
+  const w = Math.ceil((b.w + pad) * scale),
+    h = Math.ceil((b.h + pad) * scale);
   const img = new Image();
   const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
   try {
@@ -32,6 +33,35 @@ export async function exportPng(layout: Layout, scale = 2, bg = '#ffffff'): Prom
   } finally {
     URL.revokeObjectURL(url);
   }
+}
+
+/**
+ * PDF of a deck through the browser's print dialog ("Save as PDF"): one page per slide, vector,
+ * with the app's fonts (the page's stylesheets are copied into the print frame).
+ */
+export async function printPages(layouts: Layout[], title: string): Promise<void> {
+  const f = layouts[0]?.frame ?? { x: 0, y: 0, w: 1280, h: 720 };
+  const svgs = await Promise.all(layouts.map((l) => exportSvgStandalone(l)));
+  const frame = document.createElement('iframe');
+  frame.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden';
+  document.body.appendChild(frame);
+  const doc = frame.contentDocument!;
+  doc.open();
+  doc.write(
+    `<!doctype html><html><head><meta charset="utf-8"><title>${title.replace(/</g, '&lt;')}</title></head><body>${svgs
+      .map((s) => `<section>${s.replace(/^<\?xml[^>]*>\s*/, '')}</section>`)
+      .join('')}</body></html>`,
+  );
+  doc.close();
+  for (const el of document.querySelectorAll('style, link[rel="stylesheet"]')) doc.head.appendChild(doc.importNode(el, true));
+  const style = doc.createElement('style');
+  style.textContent = `@page{size:${f.w}px ${f.h}px;margin:0}html,body{margin:0!important;padding:0!important;background:#fff!important;overflow:visible!important;height:auto!important}section{width:${f.w}px;height:${f.h}px;overflow:hidden;break-after:page}section:last-child{break-after:auto}svg{display:block;width:${f.w}px;height:${f.h}px}`;
+  doc.head.appendChild(style);
+  await doc.fonts?.ready;
+  await new Promise((r) => setTimeout(r, 100));
+  frame.contentWindow!.focus();
+  frame.contentWindow!.print();
+  setTimeout(() => frame.remove(), 60_000);
 }
 
 // ───────────── file helpers ─────────────

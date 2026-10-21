@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef } from 'react';
-import { setEdgeLabel, setNodeLabel } from '../dsl/patch';
+import { removeItems, setEdgeLabel, setNodeLabel } from '../dsl/patch';
 import { useStore } from '../store';
 import { FONT_FAMILY, LINE_HEIGHT } from '../text/fit';
 
@@ -52,6 +52,12 @@ export function InlineEditor() {
     const s = useStore.getState();
     if (save) live();
     else if (s.gestureBase !== null) s.setSource(s.gestureBase, { history: 'none' });
+    // a slot left empty goes back to being a placeholder (drop the bare `slot ""` line)
+    const st = useStore.getState();
+    const d = editing.type === 'node' ? st.doc.nodeMap.get(editing.id) : undefined;
+    if (d?.slot && !d.locked && !d.label && !d.attrList.length && !d.classes.length && !d.spans.at && !d.spans.size && !d.spans.kind && st.doc.deck && 'page' in st.doc.deck.view) {
+      st.setSource(removeItems(st.src, st.doc, [d.id]), { history: 'none' });
+    }
     s.endGesture();
     s.setEditing(null);
   };

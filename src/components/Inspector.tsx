@@ -26,15 +26,15 @@ import {
   ArrowDownToLine,
   FoldVertical,
 } from 'lucide-react';
-import { useStore, type State } from '../store';
-import { isValidId, pointText, renameNode, setEdgeEnds, setSetting, setEdgeLabel, setEdgesAttr, setEdgesOp, setNodeLabel, setNodesAttr, setNodesGeom, setNodesKind, type Geom } from '../dsl/patch';
+import { reparse, useStore, type State } from '../store';
+import { isValidId, pointText, renameNode, setEdgeEnds, setPageHeader, setSetting, setEdgeLabel, setEdgesAttr, setEdgesOp, setNodeLabel, setNodesAttr, setNodesGeom, setNodesKind, type Geom } from '../dsl/patch';
 import { assetHref } from '../images';
 import { SHAPE_KINDS, type ArrowOp, type Doc, type ShapeKind } from '../dsl/types';
 import { align, distribute, matchSize, stack, type AlignMode } from '../ops/arrange';
 import { autoFix } from '../check/resolve';
 import { canvasMeasure } from '../text/fit';
 import { LiveText, NumField, Seg, ShapeIcon, SHAPE_NAMES, Swatches } from './ui';
-import { descendants, endText, parse as reparse } from '../dsl/parse';
+import { descendants, endText } from '../dsl/parse';
 import { IGNORE_NAME } from '../check/check';
 import { ignoreIssue, ignoreList, setIgnore } from '../actions';
 
@@ -90,7 +90,7 @@ export function Inspector() {
             className="chip-btn"
             onClick={() => {
               const s = useStore.getState();
-              s.apply((src) => autoFix(src, canvasMeasure, { only: new Set(related.map((r) => r.id)) }));
+              s.apply((src) => autoFix(src, canvasMeasure, { view: useStore.getState().page, only: new Set(related.map((r) => r.id)) }));
               s.notify('解消しました', 'ok');
             }}
           >
@@ -489,7 +489,7 @@ function ArrangeSection({ ids }: { ids: string[] }) {
         </button>
         <button
           onClick={() => {
-            s.apply((src) => autoFix(src, canvasMeasure, { pinned: new Set() }));
+            s.apply((src) => autoFix(src, canvasMeasure, { view: useStore.getState().page, pinned: new Set() }));
           }}
           title="重なり・はみ出しを解消"
         >
@@ -642,6 +642,71 @@ const SETTING_INFO: { key: 'gap' | 'grid' | 'padding' | 'fontmin' | 'fontmax'; l
   { key: 'fontmax', label: '最大文字', hint: '自動調整の上限サイズ', min: 6 },
 ];
 
+/** The page (or layout) on the canvas: its title, id and layout. */
+function DeckSection({ doc }: { doc: Doc }) {
+  const deck = doc.deck!;
+  const view = deck.view;
+  if ('layout' in view) {
+    const lay = deck.layouts.find((l) => l.name === view.layout)!;
+    return (
+      <div className="section">
+        <div className="section-label">レイアウト {lay.name}</div>
+        <div className="hint-text">
+          ここで置いた図形はこのレイアウトを使う全ページに出ます。slot はページが中身を入れる枠です（例: <code>slot title at (40, 30) size 1200x70</code>、ページ側は <code>title "見出し"</code>）。
+          {lay.extends ? ` 親 ${lay.extends} の図形は薄く表示され、ここでは動かせません。` : ''}
+        </div>
+      </div>
+    );
+  }
+  const page = deck.pages.find((p) => p.id === view.page)!;
+  const index = deck.pages.indexOf(page);
+  const header = (h: Parameters<typeof setPageHeader>[3]) => edit((src, d) => setPageHeader(src, d, page.id, h));
+  const written = useStore.getState().src.slice(page.header.from, page.header.to).includes('layout=');
+  return (
+    <div className="section">
+      <div className="section-label">
+        ページ {index + 1} / {deck.pages.length}
+      </div>
+      <div className="row">
+        <label style={{ width: 64 }}>名前</label>
+        <LiveText key={page.id} value={page.label} placeholder={page.id} onChange={(v) => header({ label: v })} />
+      </div>
+      <div className="row">
+        <label style={{ width: 64 }}>ID</label>
+        <input
+          key={page.id}
+          className="field"
+          defaultValue={page.id}
+          onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+          onBlur={(e) => {
+            const v = e.target.value.trim();
+            if (v === page.id) return;
+            if (!isValidId(v) || deck.pages.some((p) => p.id === v)) {
+              e.target.value = page.id;
+              useStore.getState().notify('使えない ID です（英数字・重複なし）', 'warn');
+              return;
+            }
+            header({ id: v });
+            useStore.getState().setPage({ page: v }, { fit: false });
+          }}
+        />
+      </div>
+      <div className="row">
+        <label style={{ width: 64 }}>レイアウト</label>
+        <select className="field" value={written ? (page.layout ?? '') : ''} onChange={(e) => header({ layout: e.target.value || undefined })}>
+          <option value="">{deck.layouts.some((l) => l.name === 'default') ? '既定（default）' : 'なし'}</option>
+          {deck.layouts.map((l) => (
+            <option key={l.name} value={l.name}>
+              {l.name}
+            </option>
+          ))}
+        </select>
+      </div>
+      {deck.placeholders.length > 0 && <div className="hint-text">空のスロット（{deck.placeholders.map((p) => p.id).join(', ')}）はキャンバスの点線枠をダブルクリックで埋められます。</div>}
+    </div>
+  );
+}
+
 function DocInspector({ doc }: { doc: Doc }) {
   const s = useStore.getState();
   const issues = useStore((st) => st.issues);
@@ -660,6 +725,7 @@ function DocInspector({ doc }: { doc: Doc }) {
           </div>
         </div>
       </div>
+      {doc.deck && <DeckSection doc={doc} />}
       <div className="section">
         <div className="section-label">制約とレイアウト（set 行）</div>
         {SETTING_INFO.map((it) => (

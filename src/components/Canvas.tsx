@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { descendants, parse } from '../dsl/parse';
-import { addEdge, addNodes, pointText, setEdgeEnds, setNodesAttr, setNodesGeom, uniqueId, type Geom } from '../dsl/patch';
+import { descendants } from '../dsl/parse';
+import { addEdge, addNodeLines, addNodes, pointText, setEdgeEnds, setNodesAttr, setNodesGeom, uniqueId, type Geom } from '../dsl/patch';
 import type { Doc, Port, ShapeKind } from '../dsl/types';
 import { boxContains, boxesIntersect, center, portPoint, type Box, type Pt } from '../geom/geom';
-import type { Layout } from '../layout';
-import { useStore } from '../store';
+import { layoutNode, type Layout, type NodeLayout } from '../layout';
+import { canvasMeasure } from '../text/fit';
+import { reparse, useStore } from '../store';
 import { EdgeLabel, EdgeShape, ImageHrefContext, NodeShape, diagramBounds } from './Diagram';
 import { assetHref, insertImages, isImageFile } from '../images';
 import { InlineEditor } from './InlineEditor';
@@ -66,6 +67,14 @@ export function screenToWorld(view: { x: number; y: number; zoom: number }, p: P
 }
 
 export function fitView(layout: Layout, w: number, h: number, maxZoom = 1) {
+  if (layout.frame) {
+    // a page: fill the room right of the floating toolbar
+    const b = layout.frame;
+    const left = 72,
+      pad = 28;
+    const zoom = Math.max(0.05, Math.min((w - left - pad) / b.w, (h - pad * 2) / b.h));
+    return { zoom, x: left + (w - left - pad - b.w * zoom) / 2 - b.x * zoom, y: h / 2 - (b.y + b.h / 2) * zoom };
+  }
   const b = diagramBounds(layout);
   const pad = 80;
   const zoom = Math.min(maxZoom, Math.max(0.1, Math.min((w - pad * 2) / Math.max(b.w, 1), (h - pad * 2) / Math.max(b.h, 1))));
@@ -190,6 +199,11 @@ export function Canvas() {
   const snapCandidates = useCallback((exclude: Set<string>) => {
     const xs: { v: number; box: Box }[] = [];
     const ys: { v: number; box: Box }[] = [];
+    const frame = useStore.getState().layout.frame;
+    if (frame) {
+      xs.push({ v: frame.x, box: frame }, { v: frame.x + frame.w / 2, box: frame }, { v: frame.x + frame.w, box: frame });
+      ys.push({ v: frame.y, box: frame }, { v: frame.y + frame.h / 2, box: frame }, { v: frame.y + frame.h, box: frame });
+    }
     for (const n of useStore.getState().layout.nodes) {
       if (exclude.has(n.id)) continue;
       const b = n.box;
@@ -204,6 +218,14 @@ export function Canvas() {
     for (const el of els) {
       const id = (el as Element).closest?.('[data-node]')?.getAttribute('data-node');
       if (id && id !== exclude) return id;
+    }
+    return undefined;
+  };
+
+  const placeholderAt = (clientX: number, clientY: number): string | undefined => {
+    for (const el of document.elementsFromPoint(clientX, clientY)) {
+      const id = el.closest?.('[data-slot]')?.getAttribute('data-slot');
+      if (id) return id;
     }
     return undefined;
   };
@@ -531,7 +553,7 @@ export function Canvas() {
       }
       case 'marquee': {
         const m = { x: Math.min(g.start.x, p.x), y: Math.min(g.start.y, p.y), w: Math.abs(p.x - g.start.x), h: Math.abs(p.y - g.start.y) };
-        const hits = s.layout.nodes.filter((n) => boxesIntersect(m, n.box) && !(boxContains(n.box, m) && n.parents.length === 0 && descendants(s.doc, [n.id]).size > 0)).map((n) => n.id);
+        const hits = s.layout.nodes.filter((n) => !n.def.locked && boxesIntersect(m, n.box) && !(boxContains(n.box, m) && n.parents.length === 0 && descendants(s.doc, [n.id]).size > 0)).map((n) => n.id);
         const edges = s.layout.edges.filter((e2) => e2.pts.every((q) => q.x >= m.x && q.x <= m.x + m.w && q.y >= m.y && q.y <= m.y + m.h)).map((e2) => e2.key);
         if (g.additive) s.select({ nodes: [...new Set([...g.initial.nodes, ...hits])], edges: [...new Set([...g.initial.edges, ...edges])] });
         else s.select({ nodes: hits, edges });
@@ -681,7 +703,7 @@ export function Canvas() {
         const box = { x: snapTo(p.x - from.w / 2, grid), y: snapTo(p.y - from.h / 2, grid), w: from.w, h: from.h };
         s.apply((src, doc) => {
           let out = addNodes(src, doc, [{ kind: from.kind, id, x: box.x, y: box.y, w: box.w, h: box.h, classes: from.classes, attrs: pick(from.attrs, ['fill', 'stroke', 'text', 'in']) }]);
-          out = addEdge(out, parse(out), fromId, id, '->', { fromPort: g.port });
+          out = addEdge(out, reparse(out), fromId, id, '->', { fromPort: g.port });
           return out;
         });
         useStore.getState().select({ nodes: [id] });
@@ -715,7 +737,7 @@ export function Canvas() {
     }
     if (!changes.length) return;
     let src = s.src;
-    for (const c of changes) src = setNodesAttr(src, parse(src), [c.id], 'in', c.parent);
+    for (const c of changes) src = setNodesAttr(src, reparse(src), [c.id], 'in', c.parent);
     s.setSource(src, { history: 'none' });
     const c = changes[0];
     s.notify(c.parent ? `「${c.id}」を「${c.parent}」の中に入れました` : `「${c.id}」をグループから出しました`);
@@ -730,6 +752,14 @@ export function Canvas() {
     const s = useStore.getState();
     // pointer capture retargets click events to the <svg>, so hit-test by position
     const { nodeId, edgeKey } = hitAt(clientX, clientY);
+    const slot = !nodeId && !edgeKey ? placeholderAt(clientX, clientY) : undefined;
+    if (slot) {
+      // fill an empty slot of the page's layout
+      s.apply((src, doc) => addNodeLines(src, doc, [`${slot} ""`]));
+      useStore.getState().select({ nodes: [slot] });
+      useStore.getState().setEditing({ type: 'node', id: slot });
+      return;
+    }
     if (nodeId) {
       s.select({ nodes: [nodeId] });
       s.setEditing({ type: 'node', id: nodeId });
@@ -750,6 +780,12 @@ export function Canvas() {
 
   // ── derived overlay data
   const z = view.zoom;
+  const deck = useStore((s) => s.doc.deck);
+  const slotView = !!deck && 'layout' in deck.view;
+  const placeholders = useMemo(() => {
+    const d = useStore.getState().doc;
+    return (deck?.placeholders ?? []).map((n) => layoutNode(d, n, canvasMeasure));
+  }, [deck]);
   const nodeSeverity = useMemo(() => {
     const m = new Map<string, 'error' | 'warning'>();
     for (const i of issues) for (const id of i.nodes) if (m.get(id) !== 'error') m.set(id, i.severity);
@@ -768,7 +804,7 @@ export function Canvas() {
   const showPortsFor = gesture.current?.type === 'move' || gesture.current?.type === 'resize' ? undefined : (tool === 'select' || tool === 'edge') && portNodeId ? layout.nodeMap.get(portNodeId) : undefined;
   const dotStep = 20 * z < 10 ? 100 * z : 20 * z;
   const canvasCls = ['canvas', panning ? 'panning' : '', tool === 'pan' ? 'tool-pan' : '', tool !== 'select' && tool !== 'pan' && tool !== 'edge' ? 'tool-create' : ''].join(' ');
-  const emptyDoc = layout.nodes.length === 0;
+  const emptyDoc = layout.nodes.length === 0 && !layout.frame;
 
   return (
     <ImageHrefContext.Provider value={imageHref}>
@@ -806,10 +842,32 @@ export function Canvas() {
         </defs>
         <rect width="100%" height="100%" fill="url(#dots)" />
         <g transform={`translate(${view.x} ${view.y}) scale(${z})`}>
-          {/* diagram */}
-          {layout.nodes.map((n) => (
-            <NodeShape key={n.id} n={n} interactive hideText={editing?.type === 'node' && editing.id === n.id} />
+          {/* the page (decks / set canvas=) */}
+          {layout.frame && <rect className="page-frame" x={layout.frame.x} y={layout.frame.y} width={layout.frame.w} height={layout.frame.h} fill="#ffffff" strokeWidth={1 / z} />}
+          {/* empty slots of the page's layout: double-click to fill */}
+          {placeholders.map((n) => (
+            <g key={'slot' + n.id} data-slot={n.id} className="slot-placeholder">
+              <rect x={n.box.x} y={n.box.y} width={n.box.w} height={n.box.h} rx={4 / z} strokeWidth={1.25 / z} strokeDasharray={`${5 / z} ${4 / z}`} />
+              <text x={n.box.x + 8 / z} y={n.box.y + 16 / z} fontSize={11 / z}>
+                {n.id}
+                {n.def.label ? ` — ${n.def.label.split('\n')[0]}` : ''}
+              </text>
+            </g>
           ))}
+          {/* diagram: the layout's shapes are shown but not editable from a page */}
+          {layout.nodes.map((n) =>
+            n.def.locked ? (
+              <g key={n.id} className="locked">
+                <NodeShape n={n} />
+                {slotView && n.def.slot && <SlotTag n={n} z={z} />}
+              </g>
+            ) : (
+              <g key={n.id}>
+                <NodeShape n={n} interactive hideText={editing?.type === 'node' && editing.id === n.id} />
+                {slotView && n.def.slot && <SlotTag n={n} z={z} />}
+              </g>
+            ),
+          )}
           {/* edge issue underlay */}
           {layout.edges.map((e) => {
             const sev = edgeSeverity.get(e.key);
@@ -819,10 +877,14 @@ export function Canvas() {
             <path key={'sel' + e.key} d={e.path} fill="none" stroke="var(--accent)" strokeWidth={e.style.lw + 5 / z} opacity={0.3} strokeLinecap="round" style={{ pointerEvents: 'none' }} />
           ))}
           {layout.edges.map((e) => (
-            <EdgeShape key={e.key} e={e} interactive />
+            <g key={e.key} className={e.def.locked ? 'locked' : undefined}>
+              <EdgeShape e={e} interactive={!e.def.locked} />
+            </g>
           ))}
           {layout.edges.map((e) => (
-            <EdgeLabel key={e.key} e={e} bg="var(--canvas)" interactive />
+            <g key={e.key} className={e.def.locked ? 'locked' : undefined}>
+              <EdgeLabel e={e} bg={layout.frame ? '#ffffff' : 'var(--canvas)'} interactive={!e.def.locked} />
+            </g>
           ))}
 
           {/* issues */}
@@ -983,7 +1045,7 @@ function IssueSpot({ layout, issue, z }: { layout: Layout; issue: { nodes: strin
 export function smallestContainer(layout: Layout, box: Box, exclude: Set<string>): string | undefined {
   let best: { id: string; area: number } | undefined;
   for (const n of layout.nodes) {
-    if (exclude.has(n.id) || n.kind === 'text' || n.kind === 'image') continue;
+    if (exclude.has(n.id) || n.def.locked || n.kind === 'text' || n.kind === 'image') continue;
     if (!boxContains(n.box, box)) continue;
     if (n.box.w * n.box.h <= box.w * box.h * 1.2) continue;
     const area = n.box.w * n.box.h;
@@ -996,4 +1058,16 @@ function pick(o: Record<string, string>, keys: string[]) {
   const out: Record<string, string> = {};
   for (const k of keys) if (o[k] !== undefined) out[k] = o[k];
   return out;
+}
+
+/** Layout view: the slot's name on its box (slots are where pages put their content). */
+function SlotTag({ n, z }: { n: NodeLayout; z: number }) {
+  return (
+    <g className="slot-tag" style={{ pointerEvents: 'none' }}>
+      <rect x={n.box.x} y={n.box.y} width={n.box.w} height={n.box.h} fill="none" strokeWidth={1.25 / z} strokeDasharray={`${5 / z} ${4 / z}`} />
+      <text x={n.box.x + 4 / z} y={n.box.y - 4 / z} fontSize={10 / z}>
+        slot {n.id}
+      </text>
+    </g>
+  );
 }

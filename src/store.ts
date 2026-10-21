@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { parse } from './dsl/parse';
-import type { Doc, ShapeKind } from './dsl/types';
+import { sameView, type Doc, type ShapeKind, type View } from './dsl/types';
 import { computeLayout, type Layout } from './layout';
 import { checkAll, type Issue } from './check/check';
 import { canvasMeasure } from './text/fit';
@@ -22,8 +22,8 @@ export interface Derived {
   ignored: Issue[];
 }
 
-function derive(src: string): Derived {
-  const doc = parse(src);
+function derive(src: string, page?: View): Derived {
+  const doc = parse(src, page);
   const layout = computeLayout(doc, canvasMeasure);
   const all = checkAll(doc, layout);
   return { doc, layout, issues: all.filter((i) => !i.ignored), ignored: all.filter((i) => i.ignored) };
@@ -71,6 +71,10 @@ export interface Workspace {
 
 export interface State extends Derived {
   src: string;
+  /** deck: the page / layout on the canvas (undefined: the first page, or a plain diagram) */
+  page: View | undefined;
+  /** full-screen slide show */
+  presenting: boolean;
   /** who produced the latest change (editor changes must not be echoed back) */
   origin: 'editor' | 'ui' | 'init' | 'remote';
   /** bumped when the text is replaced from outside, so in-flight canvas gestures abort */
@@ -101,6 +105,9 @@ export interface State extends Derived {
   toast: { id: number; text: string; tone?: 'ok' | 'warn' } | null;
 
   setSource(src: string, opts?: { origin?: State['origin']; history?: 'push' | 'coalesce' | 'none' }): void;
+  /** Show another page / layout of a deck (clears the selection and fits the view). */
+  setPage(page: View | undefined, opts?: { fit?: boolean }): void;
+  setPresenting(v: boolean): void;
   /** Apply a source transform as one undoable step. */
   apply(fn: (src: string, doc: Doc) => string, origin?: State['origin']): void;
   beginGesture(): void;
@@ -134,6 +141,8 @@ const HISTORY_LIMIT = 300;
 
 export const useStore = create<State>((set, get) => ({
   src: initialSrc,
+  page: undefined,
+  presenting: false,
   ...derive(initialSrc),
   origin: 'init',
   epoch: 0,
@@ -172,7 +181,17 @@ export const useStore = create<State>((set, get) => ({
       }
       lastPush = now;
     }
-    const d = derive(src);
+    let page = s.page;
+    let d = derive(src, page);
+    // the shown page was renamed / removed: stay at the same position in the deck
+    if (page && d.doc.deck && !sameView(page, d.doc.deck.view)) {
+      const old = s.doc.deck;
+      const i = 'page' in page && old ? old.pages.findIndex((p) => p.id === (page as { page: string }).page) : -1;
+      const pages = d.doc.deck.pages;
+      page = i >= 0 && pages.length ? { page: pages[Math.min(i, pages.length - 1)].id } : d.doc.deck.view;
+      d = derive(src, page);
+    }
+    if (!d.doc.deck) page = undefined;
     // prune selection of removed items
     const sel = s.selection;
     const nodes = sel.nodes.filter((id) => d.doc.nodeMap.has(id));
@@ -185,7 +204,19 @@ export const useStore = create<State>((set, get) => ({
       future: history === 'none' ? s.future : [],
       lastPush,
       selection: nodes.length !== sel.nodes.length || edges.length !== sel.edges.length ? { nodes, edges } : sel,
+      page,
     });
+  },
+
+  setPage(page, opts = {}) {
+    const s = get();
+    const d = derive(s.src, page);
+    if (sameView(d.doc.deck?.view, s.doc.deck?.view) && sameView(page, s.page)) return;
+    set({ ...d, page: d.doc.deck?.view, selection: { nodes: [], edges: [] }, editing: null, hoverIssue: null, focusIssue: null });
+    if (opts.fit !== false) queueMicrotask(() => window.dispatchEvent(new Event('charpie:fit')));
+  },
+  setPresenting(presenting) {
+    set({ presenting });
   },
 
   apply(fn, origin = 'ui') {
@@ -222,7 +253,7 @@ export const useStore = create<State>((set, get) => ({
   },
 
   remeasure() {
-    set(derive(get().src));
+    set(derive(get().src, get().page));
   },
 
   select(sel, mode = 'replace') {
@@ -312,6 +343,9 @@ useStore.subscribe((s, prev) => {
     }
   }, 250);
 });
+
+/** Parse edited text for the page / layout on the canvas (use after patching `src`). */
+export const reparse = (src: string): Doc => parse(src, useStore.getState().page);
 
 /** Convenience: the full set of issue ids touching a node / edge. */
 export function issuesFor(issues: Issue[], kind: 'node' | 'edge', id: string): Issue[] {

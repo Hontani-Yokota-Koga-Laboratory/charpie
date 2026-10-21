@@ -193,19 +193,19 @@ export function createApi(ws: Workspace) {
         }
 
         case 'GET /api/selection':
-          return send(res, 200, ws.browser ? { file: ws.browser.file, ...ws.browser.selection, unsaved: !!ws.browser.unsaved, at: new Date(ws.browser.at).toISOString() } : { file: null, nodes: [], edges: [], note: 'no browser connected' });
+          return send(res, 200, ws.browser ? { file: ws.browser.file, ...ws.browser.selection, ...(ws.browser.page ? ws.browser.page : {}), unsaved: !!ws.browser.unsaved, at: new Date(ws.browser.at).toISOString() } : { file: null, nodes: [], edges: [], note: 'no browser connected' });
 
         case 'POST /api/open': {
-          const body = json<{ file: string }>(await readBody(req));
+          const body = json<{ file: string; page?: string; layout?: string }>(await readBody(req));
           const file = ws.resolve(body.file).rel;
           if (!ws.exists(file)) throw new HttpError(404, `file not found: ${file}`);
-          ws.broadcast({ type: 'open', file });
+          ws.broadcast({ type: 'open', file, page: body.page, layout: body.layout });
           return send(res, 200, { ok: true, file, browsers: ws.connectedBrowsers });
         }
 
         case 'POST /api/select': {
-          const body = json<{ nodes?: string[]; edges?: string[]; file?: string }>(await readBody(req));
-          ws.broadcast({ type: 'select', file: body.file ?? null, nodes: body.nodes ?? [], edges: body.edges ?? [] });
+          const body = json<{ nodes?: string[]; edges?: string[]; file?: string; page?: string; layout?: string }>(await readBody(req));
+          ws.broadcast({ type: 'select', file: body.file ?? null, nodes: body.nodes ?? [], edges: body.edges ?? [], page: body.page, layout: body.layout });
           return send(res, 200, { ok: true, browsers: ws.connectedBrowsers });
         }
 

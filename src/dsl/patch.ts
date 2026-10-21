@@ -400,7 +400,7 @@ export function pageHeader(p: PageHeader): string {
 /** A fresh page id: p1, p2, … not used yet. */
 export function uniquePageId(doc: Doc, stem = 'p'): string {
   const taken = new Set(doc.deck?.pages.map((p) => p.id));
-  for (let i = doc.deck?.pages.length ?? 1; ; i++) if (!taken.has(`${stem}${i}`)) return `${stem}${i}`;
+  for (let i = (doc.deck?.pages.length ?? 0) + 1; ; i++) if (!taken.has(`${stem}${i}`)) return `${stem}${i}`;
 }
 
 function blockText(src: string, lines: Span): string {
@@ -427,20 +427,27 @@ export function addPage(src: string, doc: Doc, p: PageHeader & { after?: string;
   const body = (p.lines ?? []).map((l) => '  ' + l + '\n').join('');
   const text = `${pageHeader(p)} {\n${body}}\n`;
   if (!doc.deck) {
-    // wrap the current statements into page p1 (settings and styles stay at the top)
-    const first = Math.min(...[...doc.nodes, ...doc.edges].map((x) => x.spans.lines.from));
-    if (!Number.isFinite(first)) return insertBlock(src, text);
-    const head = src.slice(0, first);
-    const rest = src.slice(first).replace(/\s*$/, '');
-    const wrapped = rest
-      .split('\n')
-      .map((l) => (l.trim() ? '  ' + l : l))
-      .join('\n');
-    return `${head}page p1 {\n${wrapped}\n}\n\n${text}`;
+    if (![...doc.nodes, ...doc.edges].length) return insertBlock(src, text);
+    return insertBlock(toDeck(src, doc), text);
   }
   const pages = doc.deck.pages;
   const anchor = pages.find((x) => x.id === p.after) ?? pages[pages.length - 1];
   return insertBlock(src, text, anchor?.lines);
+}
+
+/** A plain diagram as a one-page deck: its statements move into `page p1 { }` (settings and styles stay on top). */
+export function toDeck(src: string, doc: Doc, id = 'p1'): string {
+  if (doc.deck) return src;
+  const first = Math.min(...[...doc.nodes, ...doc.edges].map((x) => x.spans.lines.from));
+  if (!Number.isFinite(first)) return insertBlock(src, `page ${id} {\n}\n`);
+  const head = src.slice(0, first);
+  const wrapped = src
+    .slice(first)
+    .replace(/\s*$/, '')
+    .split('\n')
+    .map((l) => (l.trim() ? '  ' + l : l))
+    .join('\n');
+  return `${head}page ${id} {\n${wrapped}\n}\n`;
 }
 
 export function removePage(src: string, doc: Doc, id: string): string {

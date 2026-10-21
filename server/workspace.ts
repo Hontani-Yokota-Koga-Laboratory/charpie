@@ -39,6 +39,8 @@ export interface BrowserState {
   file: string | null;
   hash: string;
   selection: { nodes: string[]; edges: string[] };
+  /** deck: the page / layout on the canvas */
+  page?: { page: string } | { layout: string } | null;
   issues: unknown[];
   /** the browser has edits that are not written to disk yet (manual-save mode) */
   unsaved?: boolean;
@@ -48,8 +50,8 @@ export interface BrowserState {
 export type ServerEvent =
   | { type: 'change'; file: string; src: string; hash: string }
   | { type: 'files'; files: string[] }
-  | { type: 'open'; file: string }
-  | { type: 'select'; file: string | null; nodes: string[]; edges: string[] }
+  | { type: 'open'; file: string; page?: string; layout?: string }
+  | { type: 'select'; file: string | null; nodes: string[]; edges: string[]; page?: string; layout?: string }
   | { type: 'hello'; root: string };
 
 /** A directory of .charpie files, watched for external edits (e.g. Claude Code). */

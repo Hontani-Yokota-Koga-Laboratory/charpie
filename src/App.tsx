@@ -12,6 +12,7 @@ import { useMobile } from './useMobile';
 import { MobileSheet } from './components/MobileSheet';
 import { deleteSelection, duplicateSelection } from './actions';
 import { insertImages, isImageFile } from './images';
+import { LayoutBanner, PagesPanel, Presenter } from './components/Pages';
 
 function isTyping(t: EventTarget | null) {
   return t instanceof HTMLElement && (t.isContentEditable || /INPUT|TEXTAREA|SELECT/.test(t.tagName) || !!t.closest('.cm-editor'));
@@ -37,6 +38,11 @@ function useShortcuts(openHelp: () => void) {
         return;
       }
       if (isTyping(e.target)) return;
+      if (e.key === 'F5' && s.doc.deck) {
+        e.preventDefault();
+        s.setPresenting(true);
+        return;
+      }
       if (mod && k === 'z') {
         e.preventDefault();
         if (e.shiftKey) s.redo();
@@ -50,7 +56,7 @@ function useShortcuts(openHelp: () => void) {
       }
       if (mod && k === 'a') {
         e.preventDefault();
-        s.select({ nodes: s.doc.nodes.map((n) => n.id), edges: s.doc.edges.map((e) => e.key) });
+        s.select({ nodes: s.doc.nodes.filter((n) => !n.locked).map((n) => n.id), edges: s.doc.edges.filter((e) => !e.locked).map((e) => e.key) });
         return;
       }
       const sel = s.selection;
@@ -135,6 +141,7 @@ export function App() {
   const theme = useStore((s) => s.theme);
   const viewMode = useStore((s) => s.viewMode);
   const codeWidth = useStore((s) => s.codeWidth);
+  const isDeck = useStore((s) => !!s.doc.deck);
   const [help, setHelp] = useState(false);
   const [dragging, setDragging] = useState(false);
   const mainRef = useRef<HTMLDivElement>(null);
@@ -182,9 +189,11 @@ export function App() {
     <div className={'app' + (mobile ? ' mobile' : '')}>
       <TopBar onHelp={() => setHelp(true)} />
       <div className="main" ref={mainRef}>
+        {showCanvas && isDeck && !mobile && <PagesPanel />}
         {showCanvas && (
           <div className="canvas-wrap">
             <Canvas />
+            <LayoutBanner />
             <Toolbar />
             <ZoomBar />
             <HealthPanel />
@@ -204,6 +213,7 @@ export function App() {
         )}
       </div>
       <Toast />
+      <Presenter />
       {help && <Help onClose={() => setHelp(false)} />}
     </div>
   );

@@ -33,7 +33,7 @@ import { IGNORE_NAME, ISSUE_LABEL } from '../check/check';
 import { ignoreIssue, unignoreIssue } from '../actions';
 import { autoFix } from '../check/resolve';
 import { canvasMeasure } from '../text/fit';
-import { download, exportPng, exportSvgStandalone, exportTikz, openFile, resetFileHandle, saveFile } from '../export';
+import { download, exportPng, exportSvgStandalone, exportTikz, openFile, printPages, resetFileHandle, saveFile } from '../export';
 import { createFile, flush, openFile as openRemoteFile, revert, save as saveRemote } from '../remote';
 import { Bot, Ellipsis, EyeOff, Layers, Radio, SlidersHorizontal } from 'lucide-react';
 import { useMobile } from '../useMobile';
@@ -41,7 +41,10 @@ import { pickImages } from '../images';
 import { fitView } from './Canvas';
 import { ShapeIcon, SHAPE_NAMES } from './ui';
 import { FileGallery, useGallery } from './FileGallery';
-import { LayoutGrid } from 'lucide-react';
+import { FileDown, LayoutGrid, Presentation } from 'lucide-react';
+import { parse } from '../dsl/parse';
+import { toDeck } from '../dsl/patch';
+import { computeLayout } from '../layout';
 import type { ShapeKind } from '../dsl/types';
 
 export function BrandMark() {
@@ -146,6 +149,7 @@ export function TopBar({ onHelp }: { onHelp: () => void }) {
     }
   };
   const base = fileName.replace(/\.[^.]+$/, '') || 'diagram';
+  const isDeck = useStore((st) => !!st.doc.deck);
 
   return (
     <header className="topbar" ref={ref}>
@@ -350,6 +354,43 @@ export function TopBar({ onHelp }: { onHelp: () => void }) {
                 <div className="menu-sep" />
               </>
             )}
+            <div className="menu-label">スライド</div>
+            {isDeck ? (
+              <>
+                <button
+                  className="menu-item"
+                  onClick={() => {
+                    close();
+                    s.setPresenting(true);
+                  }}
+                >
+                  <Presentation size={15} /> 発表 <span className="hint">F5</span>
+                </button>
+                <button
+                  className="menu-item"
+                  onClick={async () => {
+                    close();
+                    const st = useStore.getState();
+                    const layouts = (st.doc.deck?.pages ?? []).map((p) => computeLayout(parse(st.src, { page: p.id }), canvasMeasure));
+                    await printPages(layouts, base);
+                  }}
+                >
+                  <FileDown size={15} /> PDF（全ページ・印刷から保存）
+                </button>
+              </>
+            ) : (
+              <button
+                className="menu-item"
+                onClick={() => {
+                  close();
+                  s.apply((src, doc) => toDeck(src, doc));
+                  s.notify('1 ページのスライドにしました（左のパネルでページを追加）');
+                }}
+              >
+                <Presentation size={15} /> スライドにする（page で囲む）
+              </button>
+            )}
+            <div className="menu-sep" />
             <div className="menu-label">テキスト</div>
             <button
               className="menu-item"
@@ -550,7 +591,7 @@ export function HealthPanel() {
   };
   const fixAll = () => {
     const before = useStore.getState().issues.length;
-    s.apply((src) => autoFix(src, canvasMeasure, { pinned: new Set(useStore.getState().selection.nodes) }));
+    s.apply((src) => autoFix(src, canvasMeasure, { view: useStore.getState().page, pinned: new Set(useStore.getState().selection.nodes) }));
     const after = useStore.getState().issues.filter((i) => i.severity === 'error').length;
     s.notify(after === 0 ? `${before} 件の問題を解消しました` : `一部を解消しました（残り ${after} 件）`, after === 0 ? 'ok' : 'warn');
   };
@@ -610,7 +651,7 @@ export function HealthPanel() {
                 className="chip-btn fix"
                 onClick={(e) => {
                   e.stopPropagation();
-                  s.apply((src) => autoFix(src, canvasMeasure, { only: new Set([i.id]) }));
+                  s.apply((src) => autoFix(src, canvasMeasure, { view: useStore.getState().page, only: new Set([i.id]) }));
                   s.setHoverIssue(null);
                 }}
               >

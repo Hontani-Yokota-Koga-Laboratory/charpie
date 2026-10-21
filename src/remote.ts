@@ -90,6 +90,7 @@ export async function openFile(file: string) {
   s.setWorkspace({ file, dirty: false, conflict: false });
   s.setFileName(file);
   s.clearSelection();
+  useStore.setState({ page: undefined });
   s.loadExternal(body.src, { resetHistory: true });
   if (useStore.getState().src === body.src) useStore.setState({ past: [], future: [] });
   try {
@@ -221,7 +222,7 @@ function reportState() {
     fetch('/api/state', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ file: s.workspace.file, hash: hashText(s.src), selection: s.selection, issues: issuesOut(s, s.src), unsaved: s.workspace.dirty }),
+      body: JSON.stringify({ file: s.workspace.file, hash: hashText(s.src), selection: s.selection, page: s.doc.deck?.view ?? null, issues: issuesOut(s, s.src), unsaved: s.workspace.dirty }),
     }).catch(() => {});
   }, 200);
 }
@@ -232,7 +233,7 @@ function watchStore() {
     if (s.src !== prev.src && s.origin !== 'remote' && s.autoSave) schedulePush();
     if (s.src !== prev.src) markDirty();
     if (s.autoSave && !prev.autoSave && s.workspace.dirty && !s.workspace.conflict) schedulePush();
-    if (s.src !== prev.src || s.selection !== prev.selection || s.issues !== prev.issues || s.workspace.dirty !== prev.workspace.dirty) reportState();
+    if (s.src !== prev.src || s.selection !== prev.selection || s.issues !== prev.issues || s.page !== prev.page || s.workspace.dirty !== prev.workspace.dirty) reportState();
   });
   window.addEventListener('beforeunload', (e) => {
     const st = useStore.getState();
@@ -297,14 +298,21 @@ function connectEvents() {
         s.setWorkspace({ files: ev.files });
         if (s.workspace.file && !ev.files.includes(s.workspace.file)) onDeleted(s.workspace.file);
         return;
-      case 'open':
-        if (ev.file !== s.workspace.file) openFile(ev.file).then(() => s.notify(`${ev.file} を開きました（外部から）`));
+      case 'open': {
+        const show = () => {
+          if (ev.page || ev.layout) useStore.getState().setPage(ev.layout ? { layout: ev.layout } : { page: ev.page });
+        };
+        if (ev.file !== s.workspace.file) openFile(ev.file).then(() => (show(), s.notify(`${ev.file} を開きました（外部から）`)));
+        else show();
         return;
+      }
       case 'select': {
         if (ev.file && ev.file !== s.workspace.file) return;
-        const nodes = (ev.nodes as string[]).filter((id) => s.doc.nodeMap.has(id));
-        const edges = (ev.edges as string[]).filter((k) => s.layout.edgeMap.has(k));
-        s.select({ nodes, edges });
+        if (ev.page || ev.layout) s.setPage(ev.layout ? { layout: ev.layout } : { page: ev.page }, { fit: false });
+        const st = useStore.getState();
+        const nodes = (ev.nodes as string[]).filter((id) => st.doc.nodeMap.has(id));
+        const edges = (ev.edges as string[]).filter((k) => st.layout.edgeMap.has(k));
+        st.select({ nodes, edges });
         revealSelection(nodes, edges);
         return;
       }
