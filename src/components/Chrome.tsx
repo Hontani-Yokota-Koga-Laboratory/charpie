@@ -769,7 +769,10 @@ page intro "はじめに" layout=two {
             <tr><td>V H A / R U O D P L X T B G</td><td>選択 / 手のひら / 矢印 / 各図形ツール（B 箇条書き・G 表）</td></tr>
             <tr><td>/</td><td>挿入パレット（名前で探して置く）。ツールバーのグループは右クリックで種類を選ぶ</td></tr>
             <tr><td>F5</td><td>発表（← → で移動、Esc で終了）</td></tr>
+            <tr><td>PageUp / PageDown</td><td>前 / 次のページ（何も選んでいなければ ← → ↑ ↓ と Home / End でも）</td></tr>
             <tr><td>ダブルクリック</td><td>文字を編集（空白部分なら図形を追加）</td></tr>
+            <tr><td>箇条書きの編集</td><td>見たままの位置で編集。Enter 次の項目 / Tab・Shift+Tab 入れ子 / 行頭で「- 」「1. 」 / Backspace で記号を外す / Shift+Enter 改行 / Ctrl+B 太字。テキスト図形で「- 」と打つと箇条書きに</td></tr>
+            <tr><td>表の編集</td><td>セルを直接編集。Tab・Enter・矢印で移動（最後で新しい行）/ 上のバーで行・列の追加削除と寄せ / スプレッドシートからの貼り付けで一括入力。&lt;/&gt; で Markdown のまま編集</td></tr>
             <tr><td>ホバー時の ● をドラッグ</td><td>矢印を引く（何もない所で離すと図形ごと追加）</td></tr>
             <tr><td>Shift / Alt (ドラッグ中)</td><td>軸固定・比率固定 / スナップ無効・中心から拡縮</td></tr>
             <tr><td>ホイール / Space+ドラッグ</td><td>ズーム / パン（Shift+ホイールで横、トラックパッドの 2 本指はパン）</td></tr>

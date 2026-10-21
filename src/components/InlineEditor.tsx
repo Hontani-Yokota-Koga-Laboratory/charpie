@@ -1,13 +1,21 @@
-import { useEffect, useLayoutEffect, useRef } from 'react';
-import { removeItems, setEdgeLabel, setNodeBody, setNodeLabel } from '../dsl/patch';
-import { useStore } from '../store';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { setEdgeLabel, setNodeBody, setNodeLabel, setNodesKind } from '../dsl/patch';
+import { reparse, useStore } from '../store';
 import { LINE_HEIGHT, fontStack } from '../text/fit';
+import { dropEmptySlot, ListEditor, TableEditor } from './BlockEditors';
 
-/** In-place editing: a label, or the `{ ... }` lines of a table / list. */
+/** In-place editing: a label, or a table / list (as it is drawn, or its `{ ... }` lines). */
 export function InlineEditor() {
   const editing = useStore((s) => s.editing)!;
-  const isBlock = useStore((s) => editing.type === 'node' && !!s.layout.nodeMap.get(editing.id)?.blocks);
-  return isBlock ? <BlockEditor key={editing.id} id={editing.id} /> : <LabelEditor />;
+  const kind = useStore((s) => (editing.type === 'node' && s.layout.nodeMap.get(editing.id)?.blocks ? s.layout.nodeMap.get(editing.id)!.kind : undefined));
+  if (kind) return <BlockEditing key={editing.id} id={editing.id} kind={kind} />;
+  return <LabelEditor />;
+}
+
+function BlockEditing({ id, kind }: { id: string; kind: string }) {
+  const [source, setSource] = useState(false);
+  if (source) return <BlockEditor id={id} />;
+  return kind === 'table' ? <TableEditor id={id} onSource={() => setSource(true)} /> : <ListEditor id={id} onSource={() => setSource(true)} />;
 }
 
 /** The body of a table / list as plain lines over the shape; typing updates the canvas live. */
@@ -23,7 +31,8 @@ function BlockEditor({ id }: { id: string }) {
     el.value = useStore.getState().doc.nodeMap.get(id)?.body?.text ?? '';
     el.focus();
     done.current = false;
-    useStore.getState().beginGesture();
+    // coming from the editor drawn in place: the same gesture goes on
+    if (useStore.getState().gestureBase === null) useStore.getState().beginGesture();
   }, [id]);
   useEffect(() => {
     if (!node) useStore.getState().setEditing(null);
@@ -39,8 +48,10 @@ function BlockEditor({ id }: { id: string }) {
     if (done.current) return;
     done.current = true;
     const s = useStore.getState();
-    if (save) live();
-    else if (s.gestureBase !== null) s.setSource(s.gestureBase, { history: 'none' });
+    if (save) {
+      live();
+      dropEmptySlot(id);
+    } else if (s.gestureBase !== null) s.setSource(s.gestureBase, { history: 'none' });
     s.endGesture();
     s.setEditing(null);
   };
@@ -130,6 +141,17 @@ function LabelEditor() {
     const s = useStore.getState();
     if (s.gestureBase === null) return; // replaced from outside meanwhile
     const text = current();
+    // `- ` / `1. ` typed at the start of a text shape turns it into a list (edited as one from here on)
+    const def = node && s.doc.nodeMap.get(node.id);
+    if (def && def.kind === 'text' && !def.locked && def.spans.kind && /^([-*+]|\d+[.)]) /.test(text)) {
+      done.current = true;
+      let src = setNodesKind(s.src, s.doc, [def.id], 'list');
+      src = setNodeLabel(src, reparse(src), def.id, '');
+      src = setNodeBody(src, reparse(src), def.id, text);
+      s.setSource(src, { history: 'none' });
+      s.setEditing({ type: 'node', id: def.id });
+      return;
+    }
     const next = editing.type === 'node' ? setNodeLabel(s.src, s.doc, editing.id, text) : setEdgeLabel(s.src, s.doc, editing.id, text);
     s.setSource(next, { history: 'none' });
   };
@@ -140,11 +162,7 @@ function LabelEditor() {
     if (save) live();
     else if (s.gestureBase !== null) s.setSource(s.gestureBase, { history: 'none' });
     // a slot left empty goes back to being a placeholder (drop the bare `slot ""` line)
-    const st = useStore.getState();
-    const d = editing.type === 'node' ? st.doc.nodeMap.get(editing.id) : undefined;
-    if (d?.slot && !d.locked && !d.label && !d.attrList.length && !d.classes.length && !d.spans.at && !d.spans.size && !d.spans.kind && st.doc.deck && 'page' in st.doc.deck.view) {
-      st.setSource(removeItems(st.src, st.doc, [d.id]), { history: 'none' });
-    }
+    if (editing.type === 'node') dropEmptySlot(editing.id);
     s.endGesture();
     s.setEditing(null);
   };

@@ -97,7 +97,8 @@ export interface State extends Derived {
   geomAnchor: GeomAnchor;
   /** workspace: write every change to disk, or only on save */
   autoSave: boolean;
-  editing: { type: 'node' | 'edge'; id: string } | null;
+  /** `at`: where the user double-clicked (world coordinates), to put the caret there */
+  editing: { type: 'node' | 'edge'; id: string; at?: { x: number; y: number } } | null;
   hoverIssue: string | null;
   focusIssue: string | null;
   /** touch: taps add to / toggle the selection */

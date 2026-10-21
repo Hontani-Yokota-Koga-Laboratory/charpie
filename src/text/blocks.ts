@@ -48,11 +48,37 @@ export interface Mark {
   r: number;
 }
 
+/** Where the text of a list item / table cell sits, for editing it in place. */
+export interface BlockSlot {
+  /** list: item index; table: row */
+  row: number;
+  /** table: first column (and the columns it covers); list: 0 / 1 */
+  col: number;
+  span: number;
+  /** the area the text wraps in: left edge, top, width, height (table: the row's height) */
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  /** table: the whole cell */
+  cell?: Box;
+  align: 'left' | 'center' | 'right';
+  size: number;
+  /** weight of the text outside `**` spans */
+  weight: number;
+  color?: string;
+  /** line height as a multiple of `size` */
+  lh: number;
+  /** list: a numbered item's marker, drawn from `x` */
+  marker?: { x: number; text: string };
+}
+
 export interface BlockLayout {
   pieces: TextPiece[];
   rules: Rule[];
   fills: Fill[];
   marks: Mark[];
+  slots: BlockSlot[];
   size: number;
   overflow: boolean;
   /** area covered by the content (top-left, size) */
@@ -82,7 +108,7 @@ export interface BlockOpts {
   lineheight?: number;
 }
 
-const empty = (o: BlockOpts, box: Box): BlockLayout => ({ pieces: [], rules: [], fills: [], marks: [], size: o.fixed ?? o.max, overflow: false, x: box.x, y: box.y, width: 0, height: 0 });
+const empty = (o: BlockOpts, box: Box): BlockLayout => ({ pieces: [], rules: [], fills: [], marks: [], slots: [], size: o.fixed ?? o.max, overflow: false, x: box.x, y: box.y, width: 0, height: 0 });
 
 /** Largest half-pixel size in [min, max] for which `at(size)` fits (or the fixed size). */
 function fitSize(o: BlockOpts, at: (size: number) => BlockLayout): BlockLayout {
@@ -118,6 +144,7 @@ function place(b: BlockLayout, box: Box, o: BlockOpts): BlockLayout {
     rules: b.rules.map((r) => ({ ...r, x1: r.x1 + dx, x2: r.x2 + dx, y1: r.y1 + dy, y2: r.y2 + dy })),
     fills: b.fills.map((f) => ({ ...f, x: f.x + dx, y: f.y + dy })),
     marks: b.marks.map((m) => ({ ...m, cx: m.cx + dx, cy: m.cy + dy })),
+    slots: b.slots.map((t) => ({ ...t, x: t.x + dx, y: t.y + dy, ...(t.cell ? { cell: { ...t.cell, x: t.cell.x + dx, y: t.cell.y + dy } } : {}), ...(t.marker ? { marker: { ...t.marker, x: t.marker.x + dx } } : {}) })),
   };
 }
 
@@ -298,7 +325,8 @@ export function layoutTable(spec: TableSpec, box: Box, o: BlockOpts & { cols?: n
     });
   });
   type Cell = (typeof cells)[number][number];
-  const weightOf = (c: Cell) => (c.bold || (c.head && c.weight === undefined) ? 700 : (c.weight ?? o.weight));
+  const baseWeight = (c: Cell) => (c.head && c.weight === undefined ? 700 : (c.weight ?? o.weight));
+  const weightOf = (c: Cell) => (c.bold ? 700 : baseWeight(c));
 
   const at = (size: number): BlockLayout => {
     const padX = size * 0.6,
@@ -346,6 +374,7 @@ export function layoutTable(spec: TableSpec, box: Box, o: BlockOpts & { cols?: n
     const pieces: TextPiece[] = [];
     const rules: Rule[] = [];
     const fills: Fill[] = [];
+    const slots: BlockSlot[] = [];
     let y = box.y;
     laid.forEach((r, i) => {
       const h = rowH[i] + extraH;
@@ -355,12 +384,13 @@ export function layoutTable(spec: TableSpec, box: Box, o: BlockOpts & { cols?: n
         const x1 = xs[c.col],
           x2 = xs[c.col + c.span];
         if (c.fill) fills.push({ x: x1, y, w: x2 - x1, h, fill: c.fill });
-        if (!lines.length) return;
         const a = c.align;
         const anchor = a === 'l' ? 'left' : a === 'r' ? 'right' : 'center';
         const th = lines.length * s * LH;
         const left = x1 + padX + (c.indent ?? 0) * size,
           right = x2 - padX;
+        slots.push({ row: i, col: c.col, span: c.span, x: left, y, w: right - left, h, cell: { x: x1, y, w: x2 - x1, h }, align: anchor, size: s, weight: baseWeight(c), ...(c.color ? { color: c.color } : {}), lh: LH });
+        if (!lines.length) return;
         const x = a === 'l' ? left : a === 'r' ? right : (left + right) / 2;
         pieces.push({ x, y: y + (h - th) / 2, w: right - left, anchor, lines, rich: richLines(lines, s, weight, o.measure), size: s, weight, ...(c.color ? { color: c.color } : {}), ...(o.lineheight ? { lh: LH } : {}) });
       });
@@ -374,7 +404,7 @@ export function layoutTable(spec: TableSpec, box: Box, o: BlockOpts & { cols?: n
       if (o.rules === 'booktabs') rules.push({ x1: box.x, y1: bottom, x2: box.x + box.w, y2: bottom, lw });
     }
     if (o.rules === 'grid') for (const x of xs) rules.push({ x1: x, y1: box.y, x2: x, y2: bottom, lw: 1 });
-    return { pieces, rules, fills, marks: [], size, overflow, x: box.x, y: box.y, width: box.w, height: Math.min(height, box.h) };
+    return { pieces, rules, fills, marks: [], slots, size, overflow, x: box.x, y: box.y, width: box.w, height: Math.min(height, box.h) };
   };
   return place(fitSize(o, at), box, o);
 }
@@ -402,9 +432,10 @@ export function parseList(body: string): ListItem[] {
   for (const l of lines) {
     const lv = Math.max(0, Math.round((indent(l) - base) / 2));
     const t = l.trim();
-    const m = /^([-*+]|\d+[.)])\s+(.*)$/.exec(t);
+    // a marker alone is an empty item (an item being typed)
+    const m = /^([-*+]|\d+[.)])(?:\s+(.*))?$/.exec(t);
     if (m) {
-      const s = strong(m[2]);
+      const s = strong(m[2] ?? '');
       items.push({ level: lv, marker: /\d/.test(m[1]) ? m[1] : BULLETS[lv % BULLETS.length], text: s.text, bold: s.bold });
     } else if (items.length && lv > items[items.length - 1].level) items[items.length - 1].text += '\n' + t;
     else {
@@ -437,6 +468,7 @@ export function layoutList(items: ListItem[], box: Box, o: BlockOpts & ListSpaci
     const markW = o.markgap !== undefined ? Math.max(size * o.markgap, numW + size * 0.3) : Math.max(size * 1.1, numW + size * 0.5);
     const pieces: TextPiece[] = [];
     const marks: Mark[] = [];
+    const slots: BlockSlot[] = [];
     let y = box.y;
     let overflow = false;
     let width = 0;
@@ -454,12 +486,13 @@ export function layoutList(items: ListItem[], box: Box, o: BlockOpts & ListSpaci
       if (kind) marks.push({ kind, cx: left + s * 0.3, cy: y + (s * LH) / 2, r: s * (kind === 'square' ? 0.17 : 0.19) });
       else if (it.marker) pieces.push({ x: left, y, w: markW, anchor: 'left', lines: [it.marker], size: s, weight, ...lh });
       pieces.push({ x: textX, y, w: box.x + box.w - textX, anchor: 'left', lines: wr.lines, rich: richLines(wr.lines, s, weight, o.measure), size: s, weight, ...lh });
+      slots.push({ row: k, col: 0, span: 1, x: textX, y, w: box.x + box.w - textX, h: wr.lines.length * s * LH, align: 'left', size: s, weight: o.weight, lh: LH, ...(it.marker && !kind ? { marker: { x: left, text: it.marker } } : {}) });
       width = Math.max(width, textX - box.x + wr.width);
       y += wr.lines.length * s * LH;
     });
     const height = y - box.y;
     if (height > box.h + 0.5) overflow = true;
-    return { pieces, rules: [], fills: [], marks, size, overflow, x: box.x, y: box.y, width, height };
+    return { pieces, rules: [], fills: [], marks, slots, size, overflow, x: box.x, y: box.y, width, height };
   };
   return place(fitSize(o, at), box, o);
 }

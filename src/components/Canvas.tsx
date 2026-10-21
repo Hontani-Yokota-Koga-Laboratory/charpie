@@ -758,14 +758,16 @@ export function Canvas() {
     const slot = !nodeId && !edgeKey ? placeholderAt(clientX, clientY) : undefined;
     if (slot) {
       // fill an empty slot of the page's layout
-      s.apply((src, doc) => addNodeLines(src, doc, [`${slot} ""`]));
+      // (a list / table slot is filled with its `{ }` lines, not a label)
+      const kind = s.doc.deck?.placeholders.find((n) => n.id === slot)?.kind;
+      s.apply((src, doc) => addNodeLines(src, doc, [kind === 'list' || kind === 'table' ? slot : `${slot} ""`]));
       useStore.getState().select({ nodes: [slot] });
       useStore.getState().setEditing({ type: 'node', id: slot });
       return;
     }
     if (nodeId) {
       s.select({ nodes: [nodeId] });
-      s.setEditing({ type: 'node', id: nodeId });
+      s.setEditing({ type: 'node', id: nodeId, at: toWorld(clientX, clientY) });
     } else if (edgeKey) {
       s.select({ edges: [edgeKey] });
       s.setEditing({ type: 'edge', id: edgeKey });

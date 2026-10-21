@@ -95,6 +95,19 @@ function useShortcuts(openHelp: () => void) {
         s.setEditing({ type: 'node', id: sel.nodes[0] });
         return;
       }
+      // decks: PageUp / PageDown always, ← → ↑ ↓ / Home / End while nothing is selected, go through the pages
+      const deck = s.doc.deck;
+      if (deck && !mod && !e.altKey && 'page' in deck.view && deck.pages.length) {
+        const free = !sel.nodes.length && !sel.edges.length;
+        const step = e.key === 'PageDown' || (free && (e.key === 'ArrowRight' || e.key === 'ArrowDown')) ? 1 : e.key === 'PageUp' || (free && (e.key === 'ArrowLeft' || e.key === 'ArrowUp')) ? -1 : 0;
+        const cur = deck.pages.findIndex((p) => p.id === (deck.view as { page: string }).page);
+        const to = step ? cur + step : free && e.key === 'Home' ? 0 : free && e.key === 'End' ? deck.pages.length - 1 : -1;
+        if (to !== -1 || step) {
+          e.preventDefault();
+          if (to >= 0 && to < deck.pages.length && to !== cur) s.setPage({ page: deck.pages[to].id });
+          return;
+        }
+      }
       if (e.key.startsWith('Arrow') && sel.nodes.length) {
         e.preventDefault();
         const d = e.shiftKey ? 10 : 1;

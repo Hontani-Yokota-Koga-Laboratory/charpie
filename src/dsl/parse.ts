@@ -866,9 +866,12 @@ function buildPage(P: Parsed, pi: number): Doc {
       continue;
     }
     if (hidden.has(slot.id)) continue;
+    const kind = f.given.kind ? f.def.kind : slot.kind;
     filled.set(slot.id, {
       ...f.def,
-      kind: f.given.kind ? f.def.kind : slot.kind,
+      kind,
+      // a list / table slot filled without `{ }` yet: its body goes at the end of the line
+      ...(RAW_KINDS.has(kind) && !f.def.body ? { body: { text: '', span: { from: f.def.spans.stmt.to, to: f.def.spans.stmt.to }, braces: false } } : {}),
       x: f.given.at ? f.def.x : slot.x,
       y: f.given.at ? f.def.y : slot.y,
       w: f.given.size ? f.def.w : slot.w,
