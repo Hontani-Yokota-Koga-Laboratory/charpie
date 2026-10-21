@@ -15,7 +15,7 @@ import { useMobile } from './useMobile';
 import { MobileSheet } from './components/MobileSheet';
 import { deleteSelection, duplicateSelection } from './actions';
 import { insertImages, isImageFile } from './images';
-import { LayoutBanner, PagesPanel, Presenter } from './components/Pages';
+import { LayoutBanner, MobilePageBar, PagesPanel, Presenter } from './components/Pages';
 import { DialogHost } from './components/Dialog';
 
 function isTyping(t: EventTarget | null) {
@@ -225,6 +225,7 @@ export function App() {
             <Toolbar />
             <ZoomBar />
             <HealthPanel />
+            {mobile && isDeck && <MobilePageBar />}
           </div>
         )}
         {showCanvas && !mobile && (

@@ -3,7 +3,7 @@
  * the layout-edit banner and the full-screen slide show.
  */
 import { memo, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, ChevronDown, ChevronUp, Copy, Ellipsis, LayoutTemplate, Play, Plus, Trash2, X } from 'lucide-react';
+import { ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Copy, Ellipsis, LayoutTemplate, Play, Plus, Trash2, X } from 'lucide-react';
 import { parse } from '../dsl/parse';
 import { addPage, duplicatePage, movePage, removePage, setPageHeader, uniquePageId } from '../dsl/patch';
 import { askConfirm } from './Dialog';
@@ -233,6 +233,103 @@ export function PagesPanel() {
   );
 }
 
+/** Phones: ‹ n / N › above the bottom toolbar; the middle opens every page as a grid. */
+export function MobilePageBar() {
+  const deck = useStore((s) => s.doc.deck);
+  const hidden = useStore((s) => s.selection.nodes.length + s.selection.edges.length > 0 || s.docSheet || !!s.editing);
+  const [open, setOpen] = useState(false);
+  if (!deck) return null;
+  const st = useStore.getState;
+  const cur = 'page' in deck.view ? deck.view.page : undefined;
+  const i = deck.pages.findIndex((p) => p.id === cur);
+  const go = (k: number) => {
+    const p = deck.pages[k];
+    if (p) st().setPage({ page: p.id });
+  };
+  const page = deck.pages[i];
+  return (
+    <>
+      {!hidden && (
+        <div className="float mpage-bar" onPointerDown={(e) => e.stopPropagation()}>
+          <button className="icon-btn" aria-label="前のページ" disabled={i <= 0} onClick={() => go(i - 1)}>
+            <ChevronLeft size={20} />
+          </button>
+          <button className="mpage-cur" aria-label="ページ一覧" onClick={() => setOpen(true)}>
+            <span className="mpage-num">{i >= 0 ? `${i + 1} / ${deck.pages.length}` : 'レイアウト'}</span>
+            {page && <span className="mpage-label">{page.label || page.id}</span>}
+            {!page && 'layout' in deck.view && <span className="mpage-label">{deck.view.layout}</span>}
+          </button>
+          <button className="icon-btn" aria-label="次のページ" disabled={i < 0 || i >= deck.pages.length - 1} onClick={() => go(i + 1)}>
+            <ChevronRight size={20} />
+          </button>
+        </div>
+      )}
+      {open && <MobilePages onClose={() => setOpen(false)} />}
+    </>
+  );
+}
+
+function MobilePages({ onClose }: { onClose: () => void }) {
+  const deck = useStore((s) => s.doc.deck);
+  const wsFile = useStore((s) => (s.workspace.on ? s.workspace.file : null));
+  const imageHref = useMemo(() => assetHref(wsFile), [wsFile]);
+  const thumbs = usePageLayouts();
+  const gridRef = useRef<HTMLDivElement>(null);
+  const cur = deck && 'page' in deck.view ? deck.view.page : undefined;
+  useEffect(() => {
+    gridRef.current?.querySelector(`[data-page="${CSS.escape(cur ?? '')}"]`)?.scrollIntoView({ block: 'center' });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  if (!deck) return null;
+  const st = useStore.getState;
+  return (
+    <div className="mpages" onPointerDown={(e) => e.stopPropagation()}>
+      <div className="mpages-head">
+        <span className="pages-title">ページ</span>
+        <span className="pages-count">{deck.pages.length}</span>
+        <div style={{ flex: 1 }} />
+        <button
+          className="btn"
+          onClick={() => {
+            onClose();
+            st().setPresenting(true);
+          }}
+        >
+          <Play size={14} /> 発表
+        </button>
+        <button className="icon-btn" aria-label="閉じる" onClick={onClose}>
+          <X size={18} />
+        </button>
+      </div>
+      <ImageHrefContext.Provider value={imageHref}>
+        <div className="mpages-grid" ref={gridRef}>
+          {deck.pages.map((p, i) => {
+            const t = thumbs.find((x) => 'page' in x.view && x.view.page === p.id);
+            return (
+              <button
+                key={p.id}
+                data-page={p.id}
+                className={'mpage' + (p.id === cur ? ' on' : '')}
+                onClick={() => {
+                  st().setPage({ page: p.id });
+                  onClose();
+                }}
+              >
+                <div className="page-thumb">{t ? <SlideSvg layout={t.layout} /> : null}</div>
+                <div className="mpage-meta">
+                  <span className="page-num">{i + 1}</span>
+                  <span className="page-label">{p.label || p.id}</span>
+                  {!!t?.errors && <span className="page-errors">{t.errors}</span>}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </ImageHrefContext.Provider>
+    </div>
+  );
+}
+
 /** Shown while a layout is on the canvas: edits there change every page that uses it. */
 export function LayoutBanner() {
   const deck = useStore((s) => s.doc.deck);
@@ -264,6 +361,8 @@ export function Presenter() {
   const rootRef = useRef<HTMLDivElement>(null);
   const pages = useMemo(() => (presenting ? (parse(src).deck?.pages ?? []) : []), [presenting, src]);
   const [index, setIndex] = useState(0);
+  const touch = useRef<{ x: number; y: number } | null>(null);
+  const swiped = useRef(false);
 
   useEffect(() => {
     if (!presenting) return;
@@ -319,7 +418,23 @@ export function Presenter() {
     <div
       className="presenter"
       ref={rootRef}
-      onClick={(e) => setIndex((i) => (e.clientX < window.innerWidth / 3 ? Math.max(0, i - 1) : Math.min(pages.length - 1, i + 1)))}
+      onClick={(e) => {
+        if (swiped.current) return void (swiped.current = false);
+        setIndex((i) => (e.clientX < window.innerWidth / 3 ? Math.max(0, i - 1) : Math.min(pages.length - 1, i + 1)));
+      }}
+      onTouchStart={(e) => (touch.current = { x: e.touches[0].clientX, y: e.touches[0].clientY })}
+      onTouchEnd={(e) => {
+        // a sideways swipe turns the page (the tap that follows it is ignored)
+        const t0 = touch.current;
+        const t = e.changedTouches[0];
+        touch.current = null;
+        if (!t0 || !t) return;
+        const dx = t.clientX - t0.x;
+        if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(t.clientY - t0.y)) return;
+        swiped.current = true;
+        setTimeout(() => (swiped.current = false), 400);
+        setIndex((i) => (dx > 0 ? Math.max(0, i - 1) : Math.min(pages.length - 1, i + 1)));
+      }}
     >
       <ImageHrefContext.Provider value={imageHref}>{layout && <SlideSvg layout={layout} className="presenter-slide" />}</ImageHrefContext.Provider>
       <div className="presenter-hud">

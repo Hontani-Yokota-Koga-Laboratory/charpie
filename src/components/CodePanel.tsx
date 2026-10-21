@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Annotation, EditorState, RangeSetBuilder, StateEffect, StateField } from '@codemirror/state';
+import { Annotation, Compartment, EditorState, RangeSetBuilder, StateEffect, StateField } from '@codemirror/state';
 import { Decoration, EditorView, ViewPlugin, WidgetType, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection, type DecorationSet, type ViewUpdate } from '@codemirror/view';
 import { StreamLanguage, HighlightStyle, syntaxHighlighting, bracketMatching, indentOnInput } from '@codemirror/language';
 import { defaultKeymap, indentWithTab } from '@codemirror/commands';
@@ -8,6 +8,7 @@ import { autocompletion, closeBrackets, completionKeymap, type CompletionContext
 import { tags as t } from '@lezer/highlight';
 import { Check, Copy, FileCode } from 'lucide-react';
 import { useStore } from '../store';
+import { useMobile } from '../useMobile';
 import { SHAPE_KINDS, sameView } from '../dsl/types';
 import { EDGE_ATTRS, NODE_ATTRS } from '../dsl/parse';
 import type { Doc } from '../dsl/types';
@@ -294,6 +295,9 @@ export function CodePanel() {
   const edgeCount = useStore((s) => s.doc.edges.length);
   const lineCount = useStore((s) => s.src.split('\n').length);
   const [copied, setCopied] = useState(false);
+  // phones: wrap long lines instead of scrolling sideways
+  const mobile = useMobile();
+  const wrap = useRef(new Compartment());
 
   useEffect(() => {
     const st = useStore.getState();
@@ -316,6 +320,7 @@ export function CodePanel() {
           selLineField,
           lintGutter(),
           theme,
+          wrap.current.of(mobile ? EditorView.lineWrapping : []),
           keymap.of([
             { key: 'Mod-z', run: () => (useStore.getState().undo(), true), preventDefault: true },
             { key: 'Mod-Shift-z', run: () => (useStore.getState().redo(), true), preventDefault: true },
@@ -385,6 +390,10 @@ export function CodePanel() {
       view.destroy();
     };
   }, []);
+
+  useEffect(() => {
+    viewRef.current?.dispatch({ effects: wrap.current.reconfigure(mobile ? EditorView.lineWrapping : []) });
+  }, [mobile]);
 
   const copy = async () => {
     try {

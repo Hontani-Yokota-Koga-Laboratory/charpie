@@ -10,6 +10,7 @@ import { EdgeLabel, EdgeShape, ImageHrefContext, NodeShape, diagramBounds } from
 import { assetHref, insertImages, isImageFile } from '../images';
 import { InlineEditor } from './InlineEditor';
 import { STARTER_BODY } from './Tools';
+import { MOBILE_QUERY } from '../useMobile';
 
 type Handle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
 const HANDLES: Handle[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
@@ -71,12 +72,13 @@ export function screenToWorld(view: { x: number; y: number; zoom: number }, p: P
 
 export function fitView(layout: Layout, w: number, h: number, maxZoom = 1) {
   if (layout.frame) {
-    // a page: fill the room right of the floating toolbar
+    // a page: fill the room right of the floating toolbar (phones: between the check pill and the bottom bars)
     const b = layout.frame;
-    const left = 72,
-      pad = 28;
-    const zoom = Math.max(0.05, Math.min((w - left - pad) / b.w, (h - pad * 2) / b.h));
-    return { zoom, x: left + (w - left - pad - b.w * zoom) / 2 - b.x * zoom, y: h / 2 - (b.y + b.h / 2) * zoom };
+    const mobile = typeof matchMedia !== 'undefined' && matchMedia(MOBILE_QUERY).matches;
+    // (on its side the page switcher shares the toolbar's row)
+    const [left, right, top, bottom] = mobile ? [10, 10, 56, h <= 440 ? 70 : 130] : [72, 28, 28, 28];
+    const zoom = Math.max(0.05, Math.min((w - left - right) / b.w, (h - top - bottom) / b.h));
+    return { zoom, x: left + (w - left - right - b.w * zoom) / 2 - b.x * zoom, y: top + (h - top - bottom) / 2 - (b.y + b.h / 2) * zoom };
   }
   const b = diagramBounds(layout);
   const pad = 80;

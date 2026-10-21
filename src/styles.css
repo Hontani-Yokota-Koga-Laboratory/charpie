@@ -2030,7 +2030,7 @@ textarea.field {
 .sheet {
   display: none;
 }
-@media (max-width: 760px) {
+@media (max-width: 760px), (pointer: coarse) and (max-height: 500px) {
   .app {
     height: 100dvh;
     width: 100vw;
@@ -2045,7 +2045,22 @@ textarea.field {
   .topbar .menu-wrap {
     flex: none;
   }
+  /* the file button takes what is left (the name shortens) */
+  .topbar .menu-wrap:has(.file-split) {
+    flex: 0 1 auto;
+    min-width: 0;
+  }
+  .file-split {
+    min-width: 0;
+  }
+  .file-split > .btn:first-child {
+    min-width: 0;
+    flex: 0 1 auto;
+  }
   .hide-mobile,
+  .brand,
+  .kind-chip,
+  .live-pill.live,
   .brand-name,
   .btn-label,
   .seg-label,
@@ -2063,7 +2078,8 @@ textarea.field {
     height: 34px;
   }
   .topbar .mono-name {
-    max-width: 26vw;
+    max-width: none;
+    min-width: 0;
   }
   .topbar .seg {
     margin-left: auto;
@@ -2287,6 +2303,134 @@ textarea.field {
   }
   .code-body .cm-editor {
     font-size: 13px;
+  }
+  .code-meta {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* decks: page switcher above the bottom toolbar, page list as a full-screen sheet */
+  .mpage-bar {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: calc(72px + env(safe-area-inset-bottom));
+    z-index: 30;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 3px;
+    max-width: calc(100% - 16px);
+    border-radius: 14px;
+  }
+  .mpage-bar .icon-btn {
+    width: 40px;
+    height: 40px;
+  }
+  .mpage-cur {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    height: 40px;
+    padding: 0 10px;
+    border: 0;
+    border-radius: 10px;
+    background: transparent;
+    color: var(--text);
+    font: inherit;
+    font-size: 13px;
+  }
+  .mpage-cur:active {
+    background: var(--hover);
+  }
+  .mpage-num {
+    font-weight: 650;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .mpage-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-2);
+  }
+  .mpages {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    background: var(--bg);
+    display: flex;
+    flex-direction: column;
+    animation: sheet-in 0.22s cubic-bezier(0.2, 0.9, 0.3, 1);
+  }
+  .mpages-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: calc(8px + env(safe-area-inset-top)) 8px 8px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .mpages-grid {
+    flex: 1;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 14px;
+    padding: 14px 16px calc(20px + env(safe-area-inset-bottom));
+    align-content: start;
+  }
+  .mpage {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    border: 0;
+    padding: 0;
+    background: none;
+    color: var(--text);
+    font: inherit;
+    text-align: left;
+  }
+  .mpage .page-thumb {
+    width: 100%;
+  }
+  .mpage.on .page-thumb {
+    box-shadow: 0 0 0 2px var(--accent);
+  }
+  .mpage-meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    min-width: 0;
+  }
+  .mpage-meta .page-label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .presenter-hud {
+    opacity: 1;
+    bottom: calc(12px + env(safe-area-inset-bottom));
+  }
+}
+/* phones on their side: little height, so the page switcher sits beside the toolbar */
+@media (pointer: coarse) and (max-height: 500px) and (min-width: 561px) {
+  .toolbar {
+    right: auto;
+    max-width: calc(100% - 290px);
+  }
+  .mpage-bar {
+    left: auto;
+    right: 8px;
+    transform: none;
+    bottom: calc(8px + env(safe-area-inset-bottom));
   }
 }
 

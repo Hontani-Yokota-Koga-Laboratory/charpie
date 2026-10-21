@@ -462,7 +462,7 @@
   box-sizing: border-box;
 }
 
-@media (max-width: 760px) {
+@media (max-width: 760px), (pointer: coarse) and (max-height: 500px) {
   .gal-modal {
     width: 100vw;
     height: 100dvh;
@@ -471,6 +471,26 @@
   }
   .gal-head {
     padding: 10px 12px;
+    gap: 10px;
+    position: relative;
+  }
+  .gal-head-title {
+    padding-right: 40px;
+  }
+  .gal-search {
+    min-width: 0;
+    flex-basis: 100%;
+  }
+  .gal-tools {
+    flex-wrap: wrap;
+  }
+  .gal-seg button {
+    white-space: nowrap;
+  }
+  .gal-close {
+    position: absolute;
+    top: 8px;
+    right: 8px;
   }
   .gal-body {
     padding: 12px 16px 20px;
