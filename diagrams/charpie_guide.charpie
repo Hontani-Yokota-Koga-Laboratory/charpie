@@ -1,0 +1,436 @@
+# Charpie ガイド：UI の触り方と記法・仕様をひととおり眺めるためのサンプルスライド
+# 各ページが「その機能を使って書かれた見本」になっている。ブラウザで開いて、テキストと見比べながら読むとよい
+set canvas=1280x720 gap=12 fontmin=11 fontmax=28
+
+style title  { font: 36; weight: bold; halign: left; text: #0f172a; stroke: none; fill: none; }
+style muted  { font: 14; text: #64748b; stroke: none; fill: none; }
+style card   { fill: #f8fafc; stroke: #cbd5e1; text: #1e293b; halign: left; valign: top; font: 20; pad: 16; }
+style key    { fill: #f4f8ee; stroke: #78a047; text: #3f5a1f; font: 20; lw: 2; pad: 16; }
+style code   { fill: #0f172a; stroke: none; text: #e2e8f0; family: JetBrains Mono; font: 16; halign: left; valign: top; pad: 16; ignore: font; }
+style cap    { font: 15; text: #475569; stroke: none; fill: none; }
+style demo   { fill: #f7faf2; stroke: #78a047; text: #3f5a1f; font: 16; }
+style dark   { fill: #0f172a; stroke: none; text: #ffffff; }
+style ui     { fill: #f1f5f9; stroke: #94a3b8; text: #334155; font: 15; }
+style uihot  { fill: #e3efd3; stroke: #78a047; text: #3f5a1f; font: 15; lw: 2; }
+
+# 全ページ共通：タイトル枠とページ番号（sample.charpie と同じテーマ）
+layout default {
+  slot  title  "タイトル"         at (40, 31) size 1200x82 .title text=#ffffff font=44 stroke=none fill=#78a047
+  text  pageno "{page} / {pages}" at (1100, 672) size 140x36 .muted halign=right
+}
+
+# 左に説明（箇条書き）、右にソースの見本
+layout explain extends default {
+  slot  body list  at (48, 150) size 560x500
+  slot  src        "ソース" at (640, 150) size 592x500 .code
+}
+
+# 章の扉
+layout section {
+  rect  band   at (40, 180) size 1200x260 fill=#78a047 stroke=none
+  slot  num    "01"       at (80, 198) size 300x76 in=band text=#e3efd3 font=48 weight=bold halign=left stroke=none fill=none
+  slot  title  "章の名前"  at (80, 290) size 1120x90 in=band text=#ffffff font=52 weight=bold halign=left stroke=none fill=none
+  slot  lead   "概要"      at (80, 464) size 1160x60 .muted font=22 halign=left
+  text  pageno "{page} / {pages}"  at (1100, 672) size 140x36 .muted halign=right
+}
+
+# ───────────────────────────── 表紙・導入
+
+page cover "表紙" number=skip {
+  title "Charpie ガイド" at (40, 180) size 1200x196 font=64 halign=center fill=#7aa23f stroke=none text=#ffffff
+  text  sub  "UI の触り方と、.charpie の記法・仕様をひととおり"  at (240, 400) size 800x56 font=26 text=#0f172a
+  text  note "このデッキ自体が charpie で書かれています — diagrams/charpie_guide.charpie"  at (240, 470) size 800x40 .muted font=16
+  hide  pageno
+}
+
+page toc "目次" {
+  title "このデッキの流れ"
+  round s1  "**01**\nUI の触り方\n\n画面・マウス・キーボード・ページ・保存"  at (48, 160) size 220x300 .card
+  round s2  "**02**\n図の記法\n\n図形・属性・矢印・文字と数式"            at (289, 160) size 220x300 .card
+  round s3  "**03**\n表・箇条書き・画像\n\nMarkdown 風の表と箇条書き、画像と図の埋め込み"  at (530, 160) size 220x300 .card
+  round s4  "**04**\nスライド\n\npage / layout / slot"                 at (771, 160) size 220x300 .card
+  round s5  "**05**\n検査・書き出し・連携\n\ncheck / fix、PDF・PowerPoint・TikZ、API"  at (1012, 160) size 220x300 .card
+  round tip "各ページは、そのページで説明している機能を使って書かれています。\nブラウザで開き、右のテキストと見比べながら眺めてください。"  at (48, 500) size 1184x110 .key
+}
+
+page about "Charpie とは" {
+  title "テキストが正本の、図とスライドのエディタ"
+  round ui   "ブラウザ UI\nドラッグ・インスペクタ"       at (80, 160) size 300x100 .demo font=20
+  round ed   "エディタで直接\n（git の差分も小さい）"      at (80, 450) size 300x100 .demo font=20
+  round file "**.charpie**\nテキストが正本"           at (490, 300) size 300x120 .key font=24
+  round api  "HTTP API\nClaude Code など"           at (900, 160) size 300x100 .demo font=20
+  round cli  "CLI\ncheck / fix / export"            at (900, 450) size 300x100 .demo font=20
+  text  cap  "どの入口から編集しても同じ 1 つのファイルが更新され、ほかの入口にすぐ反映される"  at (48, 590) size 1184x40 .cap font=18
+
+  ui <-> file
+  ed <-> file
+  api <-> file
+  file -> cli
+}
+
+page start "はじめかた" layout=explain {
+  title "はじめかた"
+  body {
+    - 初回だけ npm install と npm run build
+    - npm run serve で diagrams/ を開く
+      - ブラウザで http://localhost:5173
+    - 左上の「ファイル」（Ctrl+P）から選ぶか新規作成
+      - 図 = 1 枚のキャンバス、スライド = ページあり
+    - 右上の表示切替で キャンバス / 分割 / テキスト
+    - Claude Code に頼むときは見本の .charpie を指定すると早い
+  }
+  src "\$ npm install\n\$ npm run build\n\$ npm run serve\n  → http://localhost:5173\n\n# 任意のディレクトリを開く\n\$ node dist-server/cli.js serve path/to/dir\n\n# Claude Code への頼み方の例\nmodels/ のモデルを、\nmae_example.charpie を参考に概念図にして\n\nこの論文の紹介スライドを、\nmae_talk.charpie を参考に 6 枚くらいで"
+}
+
+page entry "どこから触る？" {
+  title "どこから触っても同じ図になる"
+  round m1  "**マウスで**\n左のツールで置き、ドラッグで動かす。\n● からドラッグして矢印をつなぐ。\n細かい値は右のインスペクタで"     at (48, 160) size 376x200 .card
+  round m2  "**テキストで**\n右のテキスト欄か、エディタで\n.charpie を直接書く。\n1 行 1 図形、打つとすぐ反映"              at (452, 160) size 376x200 .card
+  round m3  "**AI に頼んで**\nClaude Code に書かせる。\nブラウザで選んだ図形を\n「これ」で指して直してもらえる"      at (856, 160) size 376x200 .card
+  round all "どの方法でも：整合性チェックが重なり・はみ出し・矢印の貫通を常に表示 →「すべて解消」で自動修正"  at (48, 460) size 1184x96 .key
+
+  m1.s -> all.n toat=0.159
+  m2.s -> all.n
+  m3.s -> all.n toat=0.841
+}
+
+# ───────────────────────────── 01 UI
+
+page sec1 "UI" layout=section {
+  num   "01"
+  title "UI の触り方"
+  lead  "画面の見かた・マウス・キーボード・ページ・保存"
+}
+
+page screen "画面" {
+  title "画面の見かた"
+  rect  scr                                at (48, 150) size 780x490 fill=#ffffff stroke=#94a3b8
+  rect  top  "① トップバー"                 at (60, 162) size 756x40 .uihot in=scr
+  rect  pgs  "② ページ\n一覧"               at (60, 214) size 96x414 .ui in=scr
+  rect  cv   "③ キャンバス"                 at (168, 214) size 352x414 .ui in=scr fill=#ffffff valign=top
+  rect  tl   "④ ツール"                     at (180, 290) size 44x200 .uihot in=cv rotate=90
+  rect  chk  "⑤ 整合性チェック"              at (250, 572) size 200x40 .uihot in=cv
+  rect  ins  "⑥ インスペクタ"               at (532, 214) size 120x414 .ui in=scr valign=top
+  rect  code "⑦ テキスト"                   at (664, 214) size 152x414 .ui in=scr valign=top fill=#1e293b text=#e2e8f0
+  list  exp  at (860, 150) size 372x490 font=18 itemgap=0.5 {
+    - ① ファイル一覧（Ctrl+P）、表示切替、保存、エクスポート、ヘルプ（?）
+    - ② スライドのときだけ。追加・複製・並べ替え・発表
+    - ③ ドラッグで編集。ホイールで拡大縮小、Space+ドラッグで移動
+    - ④ 図形・文字・表・画像を置く。/ で名前から探して挿入
+    - ⑤ 問題の一覧と「すべて解消」
+    - ⑥ 選んだものの色・文字・位置。何も選ばないとページとファイルの設定
+    - ⑦ .charpie そのもの。カーソル行の図形が選ばれる
+  }
+}
+
+page mouse "マウス" {
+  title "キャンバスでの操作"
+  table ops at (48, 150) size 1184x490 cols=1,3.2 font=20 {
+    | したいこと         | 操作 |
+    |--------------------|------|
+    | 図形を置く         | 左のツール（R 矩形・U 角丸・O 楕円 …）でクリックかドラッグ。空いている所をダブルクリックでも |
+    | 選ぶ               | クリック。Shift / Ctrl+クリックで追加、背景をドラッグで範囲選択 |
+    | 動かす・大きさ     | ドラッグ（ほかの図形の端・中心にスナップ）。Shift で軸固定・縦横比固定、Alt でスナップなし |
+    | 矢印を引く         | 図形に乗せると出る ● からドラッグ。何もない所で離すとその座標へ、Alt で離すと同じ図形を作ってつなぐ |
+    | 文字を直す         | ダブルクリックか Enter。Shift+Enter で改行、Enter / Esc で確定 |
+    | グループに入れる   | 枠の中へドロップすると in= が付く（外へ出すと外れる） |
+    | 画像を入れる       | Ctrl+V で貼り付け、ファイルをドロップ、ツールバーの画像ボタン |
+    | 見る範囲           | ホイールで拡大縮小、Space+ドラッグで移動、! で全体表示 |
+  }
+}
+
+page keys "キーボード" {
+  title "キーボード"
+  table kb at (48, 150) size 1184x430 cols=1.1,1.6,1.1,1.6 font=20 {
+    | キー               | 動作                   | キー                  | 動作                     |
+    |--------------------|------------------------|-----------------------|--------------------------|
+    | Ctrl+S             | 保存                   | Ctrl+Z / Ctrl+Y       | 元に戻す / やり直し      |
+    | Ctrl+C / X / V     | コピー・切り取り・貼り付け | Ctrl+D               | 複製                     |
+    | Delete             | 削除                   | 矢印キー              | 1px 移動（Shift で 10px） |
+    | Enter              | ラベルを編集           | Esc                   | 選択を解除               |
+    | /                  | 挿入パレット           | ?                     | ヘルプ（記法リファレンス） |
+    | Ctrl+P             | ファイル一覧           | !（Shift+1）          | 全体表示                 |
+    | F5                 | 発表                   | PageUp / PageDown     | 前 / 次のページ          |
+    | V H A              | 選択・手のひら・矢印   | R U O D P L X T B G   | 図形・テキスト・箇条書き・表 |
+  }
+  text  note "コピーはテキスト（.charpie の行）としてクリップボードに入るので、エディタやチャットにそのまま貼れる"  at (48, 600) size 1184x40 .cap halign=left
+}
+
+page panels "パネル" {
+  title "インスペクタ・テキスト・整合性チェック"
+  round p1  "**インスペクタ（右）**\n形・塗り・枠線・文字サイズ・寄せ\n位置・サイズ（数値はドラッグでも）\n親（in=）・重なり許可・警告の無視\n複数選択で整列・等幅・等間隔\n何も選ばない → ページと set の設定"  at (48, 150) size 376x290 .card font=20
+  round p2  "**テキスト（右端）**\n打つとすぐキャンバスに反映\nカーソル行の図形が選ばれる（逆も）\nCtrl+Space で補完\n構文エラーと検査結果は波線で表示"  at (452, 150) size 376x290 .card font=20
+  round p3  "**整合性チェック（下）**\n重なり・はみ出し・貫通を常に検査\n行をクリックすると該当図形を選択\n「解消」で 1 件ずつ\n「すべて解消」でまとめて\n「無視」で ignore= を付ける"  at (856, 150) size 376x290 .card font=20
+  round p4  "**表と箇条書きは、ダブルクリックでその場で編集**\n箇条書き：Enter で次の項目、Tab / Shift+Tab で入れ子、Ctrl+B で太字\n表：Tab・Enter・矢印キーでセル移動、上のバーで行・列の追加と寄せ、スプレッドシートから貼り付け\n「Markdown のまま編集」でソースを直接。確定は Ctrl+Enter / Esc / 外をクリック"  at (48, 464) size 1184x176 .key font=19 halign=left
+}
+
+page pagesui "ページと発表" {
+  title "ページ一覧・レイアウト・発表"
+  round q1  "**ページ一覧（左）**\n＋ でページを追加\nドラッグで並べ替え\n⋯ で複製・移動・削除・\nレイアウトの変更\nエラーのあるページには赤い件数"  at (48, 150) size 376x300 .card font=20
+  round q2  "**レイアウトの編集**\n一覧の下から選んで編集\n使っているページすべてに反映\n「ページ番号を追加」ボタン\n＋ で新規作成、または\nほかのスライドから取り込み"  at (452, 150) size 376x300 .card font=20
+  round q3  "**発表（F5 / ▶）**\n今のページから全画面で\n→ や Space で次へ、← で前へ\nクリック・スワイプでも進む\nEsc で終了"  at (856, 150) size 376x300 .card font=20
+  round q4  "**スマホでも**　ページを切り替えて閲覧、発表はスワイプで進む。編集は下のシートから"  at (48, 474) size 1184x72 .key font=18
+  round q5  "何も選ばずにインスペクタを見ると、ページの名前・ID・レイアウト・「ページ番号に数えない」・レイアウトの図形の表示（hide）を切り替えられる"  at (48, 562) size 1184x80 .card font=18 valign=middle
+}
+
+page save "保存とファイル" {
+  title "保存・同期・ファイル"
+  list  sv  at (48, 150) size 560x490 font=22 {
+    - **保存は既定で手動**
+      - 保存ボタンか Ctrl+S でディスクへ
+      - メニューの「自動保存」でオンにもできる
+    - **外部で書き換わったら**
+      - 未保存の編集が無ければ自動で読み込み
+      - あれば保存時に上書きするか確認
+    - 未保存のままタブを閉じると警告
+  }
+  list  fl  at (672, 150) size 560x490 font=22 {
+    - **ファイル一覧（Ctrl+P）**
+      - サムネイル・検索・図 / スライドの絞り込み
+      - 先頭の # コメントがタイトルになる
+    - **新規作成**：図 か スライド
+      - 「フォルダ/名前」でフォルダに作れる
+      - 既存のスライドと同じレイアウトで作れる
+    - **削除**は .trash/ へ移動、すぐなら「元に戻す」
+  }
+}
+
+# ───────────────────────────── 02 図の記法
+
+page sec2 "図の記法" layout=section {
+  num   "02"
+  title "図の記法"
+  lead  "1 行に 1 図形。図形を書いてから、空行を挟んで矢印"
+}
+
+page shapes "図形" {
+  title "図形の種類"
+  rect     k1  "rect"                 at (48, 150) size 200x96 .demo
+  round    k2  "round"                at (294, 150) size 200x96 .demo
+  ellipse  k3  "ellipse"              at (540, 150) size 200x96 .demo
+  diamond  k4  "diamond"              at (786, 150) size 200x96 .demo
+  trap     k5  "trap"                 at (1032, 150) size 200x96 .demo
+  para     k6  "para"                 at (48, 300) size 200x96 .demo
+  hex      k7  "hex"                  at (294, 300) size 200x96 .demo
+  cross    k8                         at (600, 300) size 80x80 .demo
+  plus     k9                         at (846, 300) size 80x80 .demo
+  text     k10 "text（枠なし）"         at (1032, 300) size 200x96 font=18
+  text     c8  "cross（⊗）"            at (540, 396) size 200x36 .cap
+  text     c9  "plus（⊕）"             at (786, 396) size 200x36 .cap
+  text     c10 "ほかに image / table / list（03 章）"  at (48, 412) size 446x36 .cap halign=left
+  rect     src "rect api \"API Gateway\" at (120, 80) size 160x60 .accent\nround grp \"グループ\" at (0, 0) size 400x300 valign=top\nrect c1 \"子\" at (20, 40) size 100x50 in=grp   # in= で親子（子は親の内側）\ncross s at (400, 80) size 60x60   # ⊗ / ⊕ はラベル無しで書く\n\n# 座標は左上が基準で y は下向き。ID はページの中で一意"  at (48, 466) size 1184x170 .code
+}
+
+page attrs "図形の属性" {
+  title "図形の属性：見た目は属性か style で"
+  rect   a1  "fill / stroke / text"     at (48, 150) size 272x96 .demo fill=#fef3c7 stroke=#d97706 text=#78350f
+  rect   a2  "lw=4"                     at (352, 150) size 272x96 .demo lw=4
+  rect   a3  "dash=dashed"              at (656, 150) size 272x96 .demo dash=dashed
+  rect   a4  "dash=dotted"              at (960, 150) size 272x96 .demo dash=dotted
+  round  a5  "round radius=40"          at (48, 266) size 272x96 .demo radius=40
+  para   a6  "skew=0.3"                 at (352, 266) size 272x96 .demo skew=0.3
+  trap   a7  "trap dir=right"           at (656, 266) size 272x96 .demo dir=right
+  rect   a8  "opacity=0.4"              at (960, 266) size 272x96 .demo opacity=0.4
+  rect   a9  "weight=bold"              at (48, 382) size 272x96 .demo weight=bold
+  rect   a10 "halign=left\nvalign=top"  at (352, 382) size 272x96 .demo halign=left valign=top
+  rect   a11 "rotate=-90"               at (656, 382) size 272x96 .demo rotate=-90 font=14
+  rect   a12 "font=12（固定）"            at (960, 382) size 272x96 .demo font=12
+  rect   src "style accent { fill: #eef2ff; stroke: #6366f1; text: #312e81; }   # 名前付きの見た目\nrect a \"A\" at (0, 0) size 160x60 .accent lw=2   # .名前 で適用。図形に書いた属性が優先\nset gap=12 fontmin=11 fontmax=28   # ファイル全体の設定（間隔・文字サイズの範囲など）\n\nほかに pad=（文字の余白）overlap=allow（重なりを許可）ignore=（警告を黙らせる）"  at (48, 502) size 1184x140 .code
+}
+
+page arrows "矢印" {
+  title "矢印：種類・ポート・経路"
+  rect   s1  "a"  at (48, 150) size 96x44 .demo
+  rect   t1  "b"  at (400, 150) size 96x44 .demo
+  rect   s2  "a"  at (48, 214) size 96x44 .demo
+  rect   t2  "b"  at (400, 214) size 96x44 .demo
+  rect   s3  "a"  at (48, 278) size 96x44 .demo
+  rect   t3  "b"  at (400, 278) size 96x44 .demo
+  rect   s4  "a"  at (48, 342) size 96x44 .demo
+  rect   t4  "b"  at (400, 342) size 96x44 .demo
+  rect   r1  "A"  at (48, 440) size 110x50 .demo
+  rect   r2  "B"  at (400, 580) size 110x50 .demo
+  rect   src "a -> b \"ラベル\"   # -> <- <-> --\nA.s -> B.w route=ortho   # ポート n/e/s/w\nA.e -> B.n route=curve bend=40 dash=dashed\nB.e -> +(70, 0)   # 端は相対座標でもよい\nA -> (400, 120)   # 絶対座標\nA -> B toat=0.3   # 到着点を辺の 30% の位置へ\nA -> B lw=2 stroke=#dc2626 text=#dc2626\n\n# 矢印のキーは from->to#n（例 A->B#0）"  at (640, 150) size 592x250 .code
+  round  tip "矢印が無関係な図形を横切ると check が警告する。\nroute=ortho や bend= で迂回させる（fix でも自動で迂回）"  at (640, 420) size 592x100 .card
+  round  tip2 "UI では矢印を選んでインスペクタから\n向き・経路（直線 / 曲線 / 直角）・曲がり・線種を変えられる"  at (640, 540) size 592x100 .card
+
+  s1 -> t1 "->"
+  s2 <- t2 "<-"
+  s3 <-> t3 "<->"
+  s4 -- t4 "--"
+  r1.s -> r2.w route=ortho "ortho"
+  r1.e -> r2.n route=curve bend=40 dash=dashed "curve"
+  r2.e -> +(70, 0)
+}
+
+page text "文字と数式" {
+  title "文字：改行・太字・数式・フォント"
+  rect   x1  "長いラベルは、枠に収まるように fontmin〜fontmax の範囲で自動的に小さくなる"  at (48, 150) size 272x96 .demo font=auto
+  rect   x2  "1 行目\n2 行目"                                            at (352, 150) size 272x96 .demo
+  rect   x3  "一部だけ**太字**にできる"                                    at (656, 150) size 272x96 .demo
+  rect   x4  "$\theta_{k+1} = \theta_k - \eta \nabla f(\theta_k)$"       at (960, 150) size 272x96 .demo font=18
+  rect   f1  "M PLUS Rounded 1c"  at (48, 266) size 272x80 .demo family="M PLUS Rounded 1c"
+  rect   f2  "Noto Serif JP 明朝"  at (352, 266) size 272x80 .demo family="Noto Serif JP"
+  rect   f3  "BIZ UDPGothic"      at (656, 266) size 272x80 .demo family="BIZ UDPGothic"
+  rect   f4  "Calibri"            at (960, 266) size 272x80 .demo family=Calibri
+  rect   src "rect a \"1 行目\\n2 行目\" ...   # \\n で改行\nrect b \"一部だけ(二重アスタリスク)太字(二重アスタリスク)\" ...\nrect m \"\$\\theta_{k+1} = \\theta_k - \\eta \\nabla f\$\" ...   # \$...\$ は TeX（\\ は 1 つ）\ntext p \"\\\$100\" ...   # \$ そのものは \\\$\nrect f \"見出し\" ... family=\"Noto Serif JP\" font=24 weight=bold\nset family=Calibri compat=pptx   # PowerPoint と同じ改行にしたいとき"  at (48, 370) size 1184x160 .code
+  round  tip "フォントは set family= → style → 図形の family= の順に上書き。.charpie の隣の fonts/ に置いたフォントも使える。\n組めない数式は原文のまま表示され、check が警告する"  at (48, 550) size 1184x90 .card font=19
+}
+
+# ───────────────────────────── 03 表・箇条書き・画像
+
+page sec3 "表・箇条書き・画像" layout=section {
+  num   "03"
+  title "表・箇条書き・画像"
+  lead  "表と箇条書きは Markdown 風に。画像と、別の図の埋め込み"
+}
+
+page table "表" {
+  title "表：Markdown の書き方で"
+  table t1 at (48, 150) size 600x270 align=l,r,r cols=2,1,1 {
+    | 手法               | 精度 (%) | 速度  |
+    |--------------------|---------:|------:|
+    | ベースライン       | 79.8     | 1.0x  |
+    | 既存手法           | 81.0     | 0.8x  |
+    | 提案手法           | 82.1     | 1.4x  | {fill=#e3efd3 weight=bold}
+    | 速度はベースライン比 ||| {scale=0.85 text=#64748b}
+  }
+  table t2 at (48, 450) size 600x190 rules=grid align=l,c,c {
+    | 書き出し | 図      | スライド |
+    |----------|:-------:|:--------:|
+    | PDF      | ○       | 全ページ |
+    | PowerPoint | —     | 全ページ |
+  }
+  rect  src "table t1 at (48, 150) size 600x270\n  align=l,r,r cols=2,1,1 {\n  | 手法 | 精度 (%) | 速度 |\n  |------|--------:|-----:|\n  | ベースライン | 79.8 | 1.0x |\n  | 提案手法 | 82.1 | 1.4x | {fill=#e3efd3 weight=bold}\n  | 速度はベースライン比 ||| {scale=0.85}\n}\n\n# |---| が見出しの区切り、:--: で寄せ\n# cols= 列幅の比 / rules=booktabs|grid|none\n# || は直前のセルを右へ 1 列結合\n# {…} を行末に書くと行、セルの後ならセル\n#   fill text weight scale indent align .style\n# セル全体を二重アスタリスクで囲むと太字"  at (680, 150) size 552x490 .code font=15
+}
+
+page list "箇条書き" {
+  title "箇条書き：- * 1. と字下げ"
+  list  l1 at (48, 150) size 560x290 levelscale=1,0.9,0.8 {
+    - 先頭は - か *
+      - 2 文字下げると入れ子
+        - 記号は ● ○ ■ と変わる
+    - 一部を **太字** にできる
+    - 数式も書ける：$\nabla f(\theta) = 0$
+  }
+  list  l2 at (48, 470) size 560x170 lineheight=1.6 itemgap=0.2 {
+    1. 番号付きは 1. で始める
+    2. lineheight= で行の間隔
+    3. itemgap= で項目の間隔
+  }
+  rect  src "list l1 at (48, 150) size 560x290\n  levelscale=1,0.9,0.8 {\n  - 先頭は - か *\n    - 2 文字下げると入れ子\n      - 記号は ● ○ ■ と変わる\n  - 一部を(二重アスタリスクで)太字に\n  - 数式も書ける：\$\\nabla f(\\theta) = 0\$\n}\nlist l2 ... lineheight=1.6 itemgap=0.2 {\n  1. 番号付きは 1. で始める\n}\n\n# 中身全体を 1 つの文字サイズで枠に収める\n# 収まらなければ text 警告（枠を広げる）\n# levelscale= 段ごとの文字の比率\n# indent= markgap= 字下げと記号の間隔\n# valign= halign= 枠の中での置き方"  at (640, 150) size 592x490 .code font=15
+}
+
+page images "画像" {
+  title "画像と、別の図の埋め込み"
+  image im1 "contain"  at (48, 150) size 260x150 src="assets/guide/mae.png" fit=contain stroke=#94a3b8
+  image im2 "cover"    at (332, 150) size 260x150 src="assets/guide/mae.png" fit=cover stroke=#94a3b8
+  image im3 "fill"     at (616, 150) size 260x150 src="assets/guide/mae.png" fit=fill stroke=#94a3b8
+  text  c1  "fit=contain（既定）"  at (48, 314) size 260x36 .cap
+  text  c2  "fit=cover"           at (332, 314) size 260x36 .cap
+  text  c3  "fit=fill"            at (616, 314) size 260x36 .cap
+  image emb "MAE の概要図"  at (48, 380) size 828x260 src="mae_example.charpie" stroke=#94a3b8
+  rect  src "image p \"代替テキスト\"\n  at (48, 150) size 260x150\n  src=\"assets/guide/mae.png\"\n  fit=cover\n\n# src は .charpie からの相対パス\n# 枠線は stroke= を付けたときだけ\n\nimage fig at (48, 380)\n  size 828x260\n  src=\"mae_example.charpie\"\n\n# 別の .charpie をそのまま描く\n# #ページID でスライドの 1 枚も可"  at (908, 150) size 324x490 .code font=15
+}
+
+# ───────────────────────────── 04 スライド
+
+page sec4 "スライド" layout=section {
+  num   "04"
+  title "スライド"
+  lead  "page か layout があるファイルはスライドになる"
+}
+
+page slides "page と layout" layout=explain {
+  title "page / layout / slot"
+  body {
+    - set canvas=1280x720 でページの大きさ
+    - **layout** に共通部分を 1 回だけ書く
+      - タイトル枠・ページ番号・ロゴ
+      - extends で継承
+    - **slot** はページが埋める枠
+      - list / table の枠も作れる
+    - **page** は slot を埋めて、自由に図形を足す
+      - layout= で使うレイアウトを選ぶ
+      - hide で一部を消す
+      - number=skip で番号に数えない
+    - {page} {pages} {title} が埋まる
+  }
+  src "layout default {\n  slot title \"タイトル\" at (40, 31)\n    size 1200x82 .title fill=#78a047\n  text pageno \"{page} / {pages}\"\n    at (1100, 672) size 140x36\n}\nlayout explain extends default {\n  slot body list at (48, 150) size 560x500\n  slot src \"ソース\" at (640, 150)\n    size 592x500 .code\n}\n\npage slides \"page と layout\" layout=explain {\n  title \"page / layout / slot\"\n  body {\n    - set canvas=1280x720 で …\n  }\n  src \"layout default { …\"\n}"
+}
+
+page deck "このデッキの構造" {
+  title "このデッキのレイアウト"
+  round ld   "layout **default**\n緑のタイトル帯・ページ番号"  at (48, 170) size 340x110 .key font=18
+  round le   "layout **explain**\n左に箇条書き、右にソース"       at (48, 400) size 340x110 .key font=18
+  round ls   "layout **section**\n章の扉（緑の帯）"           at (48, 560) size 340x80 .key font=18
+  round pd   "目次・図形・矢印・表 …\n（layout= を書かないページ）"   at (560, 170) size 340x110 .card valign=middle
+  round pe   "はじめかた・page と layout"                       at (560, 400) size 340x110 .card valign=middle
+  round ps   "01〜05 の扉"                                     at (560, 560) size 340x80 .card valign=middle
+  round pc   "表紙\nnumber=skip、hide で\n番号を消す"            at (980, 170) size 252x110 .card valign=middle
+
+  ld -> le "extends"
+  ld -> pd "使う"
+  le -> pe "layout=explain"
+  ls -> ps "layout=section"
+  pd -> pc
+}
+
+# ───────────────────────────── 05 検査・書き出し・連携
+
+page sec5 "検査・書き出し・連携" layout=section {
+  num   "05"
+  title "検査・書き出し・連携"
+  lead  "check / fix、PDF・PowerPoint・TikZ、CLI と HTTP API"
+}
+
+page check "検査" {
+  title "常に検査される制約"
+  table ck at (48, 150) size 760x490 cols=1,2.6 font=18 {
+    | 種類（ignore 名）    | 内容 |
+    |----------------------|------|
+    | overlap / gap        | 図形が重なる、set gap= より近い |
+    | text                 | 文字が fontmin でも収まらない（font= 固定ならそのサイズで） |
+    | contain / covered    | 子が親の外に出る、親の見出しが子に隠れる |
+    | through / label      | 矢印が無関係な図形を横切る、矢印ラベルが図形に重なる |
+    | loop                 | 自分自身への矢印 |
+    | page                 | スライドで図形がページの外に出る |
+    | tex / font           | 組めない数式、見つからないフォント・画像 |
+  }
+  round fx  "**fix（すべて解消）**\n最小の移動で押し出す・親を広げる・図形を大きくする・矢印を迂回させる、を収束するまで繰り返す"  at (840, 150) size 392x200 .key font=19 halign=left
+  round ig  "**ignore=**\n意図的な重なりなどは ignore=overlap のように黙らせる（UI の「無視」）。件数だけ (N ignored) と出る"  at (840, 370) size 392x160 .card font=20
+  round ms  "**measure**\n文字の実寸と、収まる最小サイズ fit を出す"  at (840, 546) size 392x96 .card font=18
+}
+
+page export "書き出し" {
+  title "書き出し"
+  table ex at (48, 150) size 1184x340 cols=1,1.7,3 font=20 {
+    | 形式        | 対象              | 中身 |
+    |-------------|-------------------|------|
+    | SVG / PNG   | 図、スライドの 1 枚 | 画像を埋め込んだまま。SVG は背景なしも |
+    | PDF         | 全ページ          | ヘッドレス Chromium によるベクター |
+    | PowerPoint  | 全ページ          | 図形・矢印・表・箇条書きは編集できる図形のまま（数式と画像は画像） |
+    | TikZ        | 全ページ / 1 枚   | lualatex + luatexja の LaTeX 文書。\$...\$ はそのまま渡る |
+  }
+  rect  src "node dist-server/cli.js export diagrams/charpie_guide.charpie -o out.pdf\nnode dist-server/cli.js export diagrams/charpie_guide.charpie -o out.pptx\nnode dist-server/cli.js export diagrams/charpie_guide.charpie --page table -o t.png --scale 2"  at (48, 510) size 1184x96 .code
+  text  note "UI ではトップバーの「エクスポート」から。PowerPoint で使うなら set compat=pptx で Office にあるフォントにそろえる"  at (48, 620) size 1184x36 .cap halign=left
+}
+
+page agent "CLI と API" {
+  title "CLI と HTTP API（Claude Code から使う）"
+  rect  cli "# CLI\ncharpie serve [dir] [--port 5173]\ncharpie check <file>   # 問題があれば exit 1\ncharpie fix <file>     # 自動解消\ncharpie measure <file> # 文字の実寸と fit\ncharpie export <file> -o x.{svg,png,pdf,pptx,tex}\ncharpie hook           # Claude Code の hook 用"  at (48, 150) size 580x260 .code
+  rect  api "# HTTP API（serve 中）\nGET  /api            # 記法と API の全説明\nGET  /api/doc        # 図形・座標・行番号\nGET  /api/issues     # 問題の一覧\nGET  /api/selection  # ブラウザで選択中のもの\nPOST /api/ops        # add connect set move align …\nPOST /api/open       # ブラウザにファイルを開かせる\nPOST /api/select     # 図形を選択して見せる"  at (652, 150) size 580x260 .code
+  round ex  "**Claude Code への頼み方の例**\n「この図形をもう少し右に」→ /api/selection で選択中の図形が分かる\n「このスライドの表を 1 行増やして」→ .charpie を直接編集し、check で検査してから返す\nPostToolUse hook（charpie hook）を設定すると、編集のたびに重なりやはみ出しを Claude 自身が検査する"  at (48, 430) size 1184x210 .key font=20 halign=left
+}
+
+page summary "まとめ" {
+  title "まとめ"
+  list  sum at (48, 160) size 1184x300 font=30 {
+    - .charpie が正本。UI・エディタ・API のどこから触っても同じファイル
+    - 1 行 1 図形、style で見た目をまとめ、表と箇条書きは Markdown 風
+    - layout に共通部分を書き、page は slot を埋めるだけ
+    - 重なり・はみ出し・貫通は常に検査、fix で自動解消
+    - PDF / PowerPoint / TikZ にそのまま書き出せる
+  }
+  round take "迷ったら ? でヘルプ、/ で挿入、このファイルのテキストを見る"  at (48, 500) size 1184x110 fill=#78a047 stroke=none text=#ffffff font=28 weight=bold
+}
