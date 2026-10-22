@@ -81,6 +81,16 @@ export async function exportPdf(file: string | null, src: string, layouts: () =>
   return { pdf: jpegPdf(pages, file?.replace(/^.*\//, '').replace(/\.charpie$/, '') ?? ''), vector: false };
 }
 
+/**
+ * PowerPoint (.pptx) of the open file, every page: built by the server (it reads the pictures and
+ * renders the formula pictures) from the text as it is now, saved or not.
+ */
+export async function exportPowerPoint(file: string, src: string): Promise<Blob> {
+  const r = await fetch('/api/export/pptx', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ file, src }) });
+  if (!r.ok) throw new Error(((await r.json().catch(() => ({}))) as { error?: string }).error ?? `HTTP ${r.status}`);
+  return r.blob();
+}
+
 // ───────────── file helpers ─────────────
 
 export function download(name: string, data: Blob | string, type = 'text/plain') {

@@ -5,14 +5,22 @@
 
 import { renderMath, type MathBox } from './math';
 import { boldClose, hasRich, mathClose, mayHaveMarkup, splitInline } from './inline';
+import { eastAsianFor } from './office';
 
 export const FONT_FAMILY = `'Inter Variable', 'Inter', 'Hiragino Sans', 'Noto Sans JP', 'Yu Gothic UI', system-ui, sans-serif`;
 export const LINE_HEIGHT = 1.25;
 /** weight of `**bold**` spans (never lighter than the text around them) */
 export const boldWeight = (weight: number) => Math.max(700, weight);
 
-/** CSS font-family for a `family=` (the default stack stays behind it for missing glyphs). */
-export const fontStack = (family?: string) => (family ? `'${family}', ${FONT_FAMILY}` : FONT_FAMILY);
+/**
+ * CSS font-family for a `family=` (the default stack stays behind it for missing glyphs). A Latin-only
+ * Office font draws its Japanese in its Office partner (Calibri → BIZ UDPGothic), as PowerPoint does.
+ */
+export const fontStack = (family?: string) => {
+  if (!family) return FONT_FAMILY;
+  const ea = eastAsianFor(family);
+  return `'${family}', ${ea ? `'${ea}', ` : ''}${FONT_FAMILY}`;
+};
 
 /** Width at 100px. `family` undefined = the default (Inter + Japanese fallbacks). */
 export type Measure = (text: string, weight: number, family?: string) => number;

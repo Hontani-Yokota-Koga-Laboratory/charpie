@@ -104,6 +104,8 @@ export interface Settings {
   fontmax: number;
   /** `set family="..."`: font family of the whole file */
   family?: string;
+  /** `set compat=pptx`: keep to what a PowerPoint export reproduces (fonts Office has) */
+  compat?: 'pptx';
 }
 
 export interface Diagnostic {

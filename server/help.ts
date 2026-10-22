@@ -17,6 +17,8 @@ GET  /api/selection                     what the user has selected in the browse
 GET  /api/export?file=NAME&format=svg   or format=tikz (svg embeds the pictures of image shapes)
                                         decks: one page (&page=ID); format=tikz&all=1 = every page as one LaTeX document
 GET  /api/export/pdf?file=NAME          PDF via headless Chromium: every page of a deck (or &page=ID), else the diagram
+POST /api/export/pptx {"file","src"?}   PowerPoint: one slide per page (shapes, arrows, tables, lists as native objects;
+                                        labels with $...$ and embedded pictures as images). "src" = unsaved text
                                         (POST {file, src} renders text not yet saved)
 GET  /api/asset?file=NAME&src=PATH      a picture referenced by an image shape (src relative to the .charpie)
 GET  /api/fonts?file=NAME&family=F      @font-face CSS for family= fonts ({"css","missing"}); files at /api/font/<id>
@@ -93,6 +95,11 @@ After writing, check "errors" — fix overlaps/overflow with {"op":"fix"} or by 
               widths) unless the real font is in fonts/. Missing → check warns (font) and the default is used.
               Browser, PNG/PDF export and check/measure use the same files; SVG export embeds the needed subsets;
               TikZ selects it with luatexja-fontspec (the font must be installed for lualatex).
+              Japanese in Calibri / Arial is drawn in BIZ UDPGothic, in Cambria / Times New Roman in BIZ UDPMincho
+              (as Office pairs them; also the East Asian font of a .pptx export).
+  set compat=pptx = keep to fonts PowerPoint has (Calibri Arial Cambria "Times New Roman" "BIZ UDPGothic"
+              "BIZ UDPMincho"): check warns (font) about any other, the default (Inter) included, so a .pptx
+              export breaks its lines where charpie does.
   node attrs: fill stroke text lw dash(solid|dashed|dotted) font(auto|px) family weight(bold|light)
               valign(top|middle|bottom) in(parent id) overlap=allow skew radius opacity
               dir(up|down|left|right: short side of a trap) pad(text padding, overrides set padding)
@@ -143,7 +150,7 @@ After writing, check "errors" — fix overlaps/overflow with {"op":"fix"} or by 
   page cover "表紙" number=skip { … }      # not counted: later pages number from 1, {pages} leaves it out
                                          # (a skipped page shows the number before it; none before the first)
   Shape ids are per page. CLI: check / fix / measure go page by page;
-  export --page ID (svg/png/tikz) · export -o deck.pdf (all pages)
+  export --page ID (svg/png/tikz) · export -o deck.pdf / deck.pptx (all pages)
 
 ## Layout rules that are checked continuously
   - shapes must not overlap (except parent/child via in=, or overlap=allow); keep >= gap apart

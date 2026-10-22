@@ -8,6 +8,7 @@ import { views } from '../src/dsl/parse';
 import { setEmbedResolver } from '../src/layout';
 import { fileResolver } from './embed';
 import { filePdf } from './pdf';
+import { filePptx } from './pptx';
 import { helpText } from './help';
 import { fontMeasure } from './measure';
 import { embeddedFontCss, embedFonts, faceById, fontCss, fontMime, fontsNear, listFamilies } from './fonts';
@@ -204,6 +205,18 @@ export function createApi(ws: Workspace) {
           res.setHeader('Content-Type', 'application/pdf');
           res.setHeader('Cache-Control', 'no-store');
           res.end(pdf);
+          return;
+        }
+
+        case 'POST /api/export/pptx': {
+          const body = json<{ file?: string; src?: string; page?: string }>(await readBody(req));
+          const file = ws.pick(body.file ?? q.get('file'));
+          const src = typeof body.src === 'string' ? body.src : ws.read(file);
+          const { pptx } = await filePptx(src, ws.resolve(file).abs, body.page ? { page: body.page } : undefined, ws.root);
+          res.statusCode = 200;
+          res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.presentationml.presentation');
+          res.setHeader('Cache-Control', 'no-store');
+          res.end(pptx);
           return;
         }
 

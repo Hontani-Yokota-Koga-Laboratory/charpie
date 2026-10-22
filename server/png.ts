@@ -126,3 +126,24 @@ export async function svgsToPdf(svgs: string[]): Promise<Buffer> {
     await browser.close();
   }
 }
+
+/** Several SVGs as PNGs of the given pixel sizes, with one browser (the pictures of a .pptx). */
+export async function svgsToPngs(jobs: { svg: string; w: number; h: number }[]): Promise<Buffer[]> {
+  if (!jobs.length) return [];
+  const browser = await launch();
+  try {
+    const out: Buffer[] = [];
+    const faces = fontFaces();
+    for (const job of jobs) {
+      const { w, h } = svgSize(job.svg);
+      const page = await browser.newPage({ viewport: { width: w, height: h }, deviceScaleFactor: job.w / w });
+      await page.setContent(`<!doctype html><html><head><meta charset="utf-8"><style>${faces}\nhtml,body{margin:0;padding:0;background:transparent}svg{display:block}</style></head><body>${bare(job.svg)}</body></html>`);
+      await settle(page);
+      out.push(await page.screenshot({ clip: { x: 0, y: 0, width: w, height: h }, type: 'png', omitBackground: true }));
+      await page.close();
+    }
+    return out;
+  } finally {
+    await browser.close();
+  }
+}

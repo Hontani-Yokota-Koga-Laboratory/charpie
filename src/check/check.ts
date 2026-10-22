@@ -3,6 +3,7 @@ import { endText } from '../dsl/parse';
 import { boxContains, boxesIntersect, clipPoly, outline, polyBox, polySeparation, polylineHitsPoly, shrinkPoly, type Pt } from '../geom/geom';
 import type { Layout, NodeLayout } from '../layout';
 import { renderMath, splitMath } from '../text/math';
+import { isOfficeFamily, OFFICE_FAMILIES } from '../text/office';
 
 export type IssueCode = 'text-covered' | 'overlap' | 'too-close' | 'text-overflow' | 'containment' | 'edge-through' | 'label-overlap' | 'self-loop' | 'tex' | 'off-page' | 'font';
 
@@ -131,6 +132,27 @@ export function checkAll(doc: Doc, layout: Layout): Issue[] {
     for (const [f, u] of users)
       if (fontLookup(f) === false)
         issues.push({ id: `font:${f}`, code: 'font', severity: 'warning', message: `フォント "${f}" が見つかりません（既定のフォントで描きます。fonts/ に置くか npm i @fontsource/<名前>）`, ...u });
+  }
+
+  // 1a''. `set compat=pptx`: only fonts PowerPoint has (any other is replaced there, and lines break elsewhere)
+  if (doc.settings.compat === 'pptx') {
+    const users = new Map<string, { nodes: string[]; edges: string[] }>();
+    const use = (f: string | undefined, kind: 'nodes' | 'edges', id: string) => {
+      if (isOfficeFamily(f)) return;
+      const k = f ?? '';
+      if (!users.has(k)) users.set(k, { nodes: [], edges: [] });
+      users.get(k)![kind].push(id);
+    };
+    for (const n of nodes) if (n.kind !== 'image' && (n.def.label || n.blocks)) use(n.style.family, 'nodes', n.id);
+    for (const e of layout.edges) if (e.def.label) use(e.style.family, 'edges', e.key);
+    for (const [f, u] of users)
+      issues.push({
+        id: `compat:${f}`,
+        code: 'font',
+        severity: 'warning',
+        message: `${f ? `フォント "${f}"` : '既定のフォント（Inter）'}は PowerPoint にありません（compat=pptx）。family= を ${OFFICE_FAMILIES.join(' / ')} のどれかに`,
+        ...u,
+      });
   }
 
   // 1b. a container's own text must not be covered by its children

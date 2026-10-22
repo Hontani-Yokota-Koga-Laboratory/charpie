@@ -7,6 +7,7 @@ import { createRequire } from 'node:module';
 import * as fontkit from 'fontkit';
 import type { Measure } from '../src/text/fit';
 import { faceFor, findFamily, openFace, type Face } from './fonts';
+import { eastAsianFor } from '../src/text/office';
 
 const require = createRequire(import.meta.url);
 type Font = { unitsPerEm: number; layout(s: string, features?: Record<string, boolean>): { advanceWidth: number }; hasGlyphForCodePoint(c: number): boolean };
@@ -34,6 +35,9 @@ const cache = new Map<string, number>();
 export const fontMeasure: Measure = (text, weight, family) => {
   const w = WEIGHTS.reduce((a, b) => (Math.abs(b - weight) < Math.abs(a - weight) ? b : a));
   const faces = family ? findFamily(family) : undefined;
+  // a Latin-only Office font's Japanese comes from its partner (as fontStack draws it)
+  const ea = eastAsianFor(family);
+  const eaFaces = faces && ea ? findFamily(ea) : undefined;
   const key = (faces ? weight + '|' + family : w) + '|' + text;
   const hit = cache.get(key);
   if (hit !== undefined) return hit;
@@ -50,7 +54,7 @@ export const fontMeasure: Measure = (text, weight, family) => {
   for (const ch of text) {
     const cp = ch.codePointAt(0)!;
     // the family's own glyph if it has one, else the default stack (as the browser falls back)
-    face = faces ? faceFor(faces, weight, cp) : undefined;
+    face = faces ? (faceFor(faces, weight, cp) ?? (eaFaces ? faceFor(eaFaces, weight, cp) : undefined)) : undefined;
     const f = face ? openFace(face) : latin?.hasGlyphForCodePoint(cp) ? latin : ext?.hasGlyphForCodePoint(cp) ? ext : null;
     if (f) {
       if (f !== runFont) flush();

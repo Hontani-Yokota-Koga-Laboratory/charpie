@@ -10,6 +10,7 @@ import { createApi } from './api';
 import { fontMeasure } from './measure';
 import { svgToPng } from './png';
 import { filePdf, standaloneSvg } from './pdf';
+import { filePptx } from './pptx';
 import { fileResolver } from './embed';
 import { setEmbedResolver } from '../src/layout';
 import { Workspace } from './workspace';
@@ -23,10 +24,11 @@ Usage:
   charpie fix <file...>                        auto-resolve layout problems in place
   charpie measure <file...> [--json]           per shape: font size, text block vs box (slack), and the
                                                smallest box that still fits the label as written (fit)
-  charpie export <file> [--format svg|tikz|png|pdf] [--scale 2] [--page ID | --layout NAME] [-o out]
+  charpie export <file> [--format svg|tikz|png|pdf|pptx] [--scale 2] [--page ID | --layout NAME] [-o out]
                                                png / pdf render via headless Chromium (format inferred from -o)
                                                decks: svg/png export one page (default: the first);
-                                               pdf and tikz (a LaTeX document, lualatex) every page,
+                                               pdf, pptx (PowerPoint, native shapes / tables / lists)
+                                               and tikz (a LaTeX document, lualatex) every page,
                                                or one with --page
 
 Decks (files with page / layout blocks) are checked, fixed and measured page by page.
@@ -179,7 +181,7 @@ function measureCmd(args: string[]) {
 
 async function exportCmd(args: string[]) {
   const out = arg(args, '-o') ?? arg(args, '--out');
-  const fmt = arg(args, '--format', '-f') ?? (out?.endsWith('.png') ? 'png' : out?.endsWith('.tex') ? 'tikz' : out?.endsWith('.pdf') ? 'pdf' : 'svg');
+  const fmt = arg(args, '--format', '-f') ?? (out?.endsWith('.png') ? 'png' : out?.endsWith('.tex') ? 'tikz' : out?.endsWith('.pdf') ? 'pdf' : out?.endsWith('.pptx') ? 'pptx' : 'svg');
   const view = viewArg(args);
   const src = fs.readFileSync(args[0], 'utf8');
   const svgOf = (v: View | undefined) => standaloneSvg(src, path.resolve(args[0]), v);
@@ -188,6 +190,13 @@ async function exportCmd(args: string[]) {
     if (out) fs.writeFileSync(out, pdf);
     else process.stdout.write(pdf);
     if (out) console.error(`${out}: ${pages} page${pages === 1 ? '' : 's'}`);
+    return;
+  }
+  if (fmt === 'pptx') {
+    const { pptx, pages } = await filePptx(src, path.resolve(args[0]), view);
+    if (out) fs.writeFileSync(out, pptx);
+    else process.stdout.write(pptx);
+    if (out) console.error(`${out}: ${pages} slide${pages === 1 ? '' : 's'}`);
     return;
   }
   const pages = views(src).filter((v) => v && 'page' in v);

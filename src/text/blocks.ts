@@ -20,6 +20,8 @@ export interface TextPiece {
   color?: string;
   /** line height as a multiple of `size` (default LINE_HEIGHT) */
   lh?: number;
+  /** index of the slot (table cell / list item) this text belongs to; a list's number marker has none */
+  slot?: number;
 }
 
 export interface Rule {
@@ -392,7 +394,7 @@ export function layoutTable(spec: TableSpec, box: Box, o: BlockOpts & { cols?: n
         slots.push({ row: i, col: c.col, span: c.span, x: left, y, w: right - left, h, cell: { x: x1, y, w: x2 - x1, h }, align: anchor, size: s, weight: baseWeight(c), ...(c.color ? { color: c.color } : {}), lh: LH });
         if (!lines.length) return;
         const x = a === 'l' ? left : a === 'r' ? right : (left + right) / 2;
-        pieces.push({ x, y: y + (h - th) / 2, w: right - left, anchor, lines, rich: richLines(lines, s, weight, o.measure), size: s, weight, ...(c.color ? { color: c.color } : {}), ...(o.lineheight ? { lh: LH } : {}) });
+        pieces.push({ x, y: y + (h - th) / 2, w: right - left, anchor, lines, rich: richLines(lines, s, weight, o.measure), size: s, weight, ...(c.color ? { color: c.color } : {}), ...(o.lineheight ? { lh: LH } : {}), slot: slots.length - 1 });
       });
       y += h;
       if (o.rules === 'grid' || (o.rules === 'booktabs' && i === spec.header - 1 && i < nrow - 1)) rules.push({ x1: box.x, y1: y, x2: box.x + box.w, y2: y, lw: o.rules === 'grid' ? 1 : 0.9 });
@@ -485,7 +487,7 @@ export function layoutList(items: ListItem[], box: Box, o: BlockOpts & ListSpaci
       const lh = o.lineheight ? { lh: LH } : {};
       if (kind) marks.push({ kind, cx: left + s * 0.3, cy: y + (s * LH) / 2, r: s * (kind === 'square' ? 0.17 : 0.19) });
       else if (it.marker) pieces.push({ x: left, y, w: markW, anchor: 'left', lines: [it.marker], size: s, weight, ...lh });
-      pieces.push({ x: textX, y, w: box.x + box.w - textX, anchor: 'left', lines: wr.lines, rich: richLines(wr.lines, s, weight, o.measure), size: s, weight, ...lh });
+      pieces.push({ x: textX, y, w: box.x + box.w - textX, anchor: 'left', lines: wr.lines, rich: richLines(wr.lines, s, weight, o.measure), size: s, weight, ...lh, slot: slots.length });
       slots.push({ row: k, col: 0, span: 1, x: textX, y, w: box.x + box.w - textX, h: wr.lines.length * s * LH, align: 'left', size: s, weight: o.weight, lh: LH, ...(it.marker && !kind ? { marker: { x: left, text: it.marker } } : {}) });
       width = Math.max(width, textX - box.x + wr.width);
       y += wr.lines.length * s * LH;

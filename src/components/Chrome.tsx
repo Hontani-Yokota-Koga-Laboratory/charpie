@@ -30,7 +30,7 @@ import { IGNORE_NAME, ISSUE_LABEL } from '../check/check';
 import { ignoreIssue, unignoreIssue } from '../actions';
 import { autoFix } from '../check/resolve';
 import { canvasMeasure } from '../text/fit';
-import { download, exportPdf, exportPng, exportSvgStandalone, exportTikz, exportTikzDeck, openFile, resetFileHandle, saveFile } from '../export';
+import { download, exportPdf, exportPng, exportPowerPoint, exportSvgStandalone, exportTikz, exportTikzDeck, openFile, resetFileHandle, saveFile } from '../export';
 import { flush, revert, save as saveRemote } from '../remote';
 import { askConfirm } from './Dialog';
 import { newFileDialog } from './NewFile';
@@ -391,6 +391,25 @@ export function TopBar({ onHelp }: { onHelp: () => void }) {
                   }}
                 >
                   <FileDown size={15} /> PDF（全ページ）
+                </button>
+                <button
+                  className="menu-item"
+                  onClick={async () => {
+                    close();
+                    const st = useStore.getState();
+                    if (!st.workspace.on || !st.workspace.file) return st.notify('PowerPoint の書き出しには charpie serve で開いたファイルが必要です', 'warn');
+                    st.notify('PowerPoint を書き出しています…');
+                    try {
+                      const pptx = await exportPowerPoint(st.workspace.file, st.src);
+                      download(base + '.pptx', new Blob([pptx], { type: 'application/octet-stream' }));
+                      const pages = st.doc.deck?.pages.length ?? 1;
+                      st.notify(`${base}.pptx（${pages} 枚）を書き出しました${st.doc.settings.compat === 'pptx' ? '' : '。PowerPoint で同じ改行にするには set compat=pptx'}`, 'ok');
+                    } catch (e) {
+                      st.notify(`PowerPoint を書き出せませんでした: ${(e as Error).message}`, 'warn');
+                    }
+                  }}
+                >
+                  <FileDown size={15} /> PowerPoint（.pptx）
                 </button>
               </>
             ) : (

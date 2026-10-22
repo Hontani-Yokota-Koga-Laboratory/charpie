@@ -97,7 +97,8 @@ page cover "表紙" number=skip { … }      # 番号に数えない（次のペ
 - 共通部分（ロゴ・帯・ページ番号・タイトル枠）はレイアウトに 1 回だけ書く。ページごとに繰り返さない。
 - ブロックの中は 2 文字字下げ。図形 ID はページ内で一意（別ページなら同じ ID でよい）。
 - `check` は全ページ・全レイアウトを検査し、`(page intro)` のように場所を出す。レイアウトの図形同士の問題はレイアウト側で 1 回だけ出る。
-- PNG で見るときは `export diagrams/x.charpie --page intro -o $TMPDIR/x.png --scale 1`、全ページは `-o $TMPDIR/x.pdf`。TikZ は `-o x.tex` で全ページを 1 つの LaTeX 文書（lualatex + luatexja、ページ = スライドの大きさ）、`--page` で 1 枚分の tikzpicture。`measure` / `fix` もページごと（`--page` / `--layout` で絞れる）。
+- PNG で見るときは `export diagrams/x.charpie --page intro -o $TMPDIR/x.png --scale 1`、全ページは `-o $TMPDIR/x.pdf`。PowerPoint は `-o x.pptx`（全ページ。図形・矢印・表・箇条書きは PowerPoint の図形、`$...$` を含むラベルと画像は画像）。TikZ は `-o x.tex` で全ページを 1 つの LaTeX 文書（lualatex + luatexja、ページ = スライドの大きさ）、`--page` で 1 枚分の tikzpicture。`measure` / `fix` もページごと（`--page` / `--layout` で絞れる）。
+- PowerPoint で使うデッキは `set compat=pptx`。Office にあるフォント（Calibri / Arial / Cambria / Times New Roman / BIZ UDPGothic / BIZ UDPMincho）以外を `check` が警告する（既定の Inter も対象。`set family=` で揃える）。これで .pptx の改行が charpie と同じになる。Calibri / Arial の日本語は BIZ UDPGothic、Cambria / Times New Roman の日本語は BIZ UDPMincho で描かれる。
 - API は `?page=ID` / `?layout=名前` で対象を選ぶ（省略時は先頭ページ）。ページ操作は `add-page` `duplicate-page` `move-page` `remove-page` `set-page` `add-layout`。`/api/selection` の `page` がユーザーの見ているページ。
 
 ### 検査される制約（守ること）

@@ -17,6 +17,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import * as fontkit from 'fontkit';
+import { eastAsianFor } from '../src/text/office';
 
 const require = createRequire(import.meta.url);
 
@@ -258,7 +259,11 @@ export function svgFamilies(svg: string): string[] {
   for (const m of svg.matchAll(/font-family="([^"]+)"/g)) {
     const first = /^\s*'([^']+)'/.exec(m[1].replace(/&#x27;|&#39;|&apos;/g, "'"))?.[1];
     // the default stack starts with Inter, which exports load on their own
-    if (first && !/^Inter( Variable)?$/.test(first)) out.add(first);
+    if (first && !/^Inter( Variable)?$/.test(first)) {
+      out.add(first);
+      const ea = eastAsianFor(first);
+      if (ea) out.add(ea);
+    }
   }
   return [...out];
 }

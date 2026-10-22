@@ -7,6 +7,7 @@ import { useEffect, useState } from 'react';
 import { setFontLookup } from './check/check';
 import type { Layout } from './layout';
 import { clearMeasureCache } from './text/fit';
+import { eastAsianFor } from './text/office';
 import { useStore } from './store';
 
 /** family → found on the server (undefined while asking) */
@@ -18,8 +19,11 @@ setFontLookup((f) => known.get(f));
 
 function collect(layout: Layout): Map<string, { weights: Set<number>; text: string }> {
   const out = new Map<string, { weights: Set<number>; text: string }>();
-  const add = (family: string | undefined, weight: number, text: string) => {
+  const add = (family: string | undefined, weight: number, text: string): void => {
     if (!family || !text) return;
+    // its Japanese is drawn in the partner font (fontStack)
+    const ea = eastAsianFor(family);
+    if (ea) add(ea, weight, text);
     if (!out.has(family)) out.set(family, { weights: new Set([700]), text: '' });
     const e = out.get(family)!;
     e.weights.add(weight);

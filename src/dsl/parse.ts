@@ -169,7 +169,7 @@ function parseEnd(ts: Tok[], i: number): ParsedEnd | undefined {
   }
   return undefined;
 }
-const SETTINGS_KEYS = new Set<string>(['gap', 'grid', 'padding', 'fontmin', 'fontmax', 'canvas', 'family']);
+const SETTINGS_KEYS = new Set<string>(['gap', 'grid', 'padding', 'fontmin', 'fontmax', 'canvas', 'family', 'compat']);
 
 const KIND_ALIASES: Record<string, ShapeKind> = {
   rectangle: 'rect',
@@ -594,6 +594,13 @@ function parseFile(src: string): Parsed {
         if (k === 'family') {
           settings.family = v;
           settingsAttrs[k] = v;
+          continue;
+        }
+        if (k === 'compat') {
+          if (v === 'pptx') {
+            settings.compat = v;
+            settingsAttrs[k] = v;
+          } else err(out.attrList.find((a) => a.key === k)!.span, 'compat は pptx です（PowerPoint にあるフォントだけを使う）');
           continue;
         }
         if (k === 'canvas') {
