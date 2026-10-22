@@ -29,9 +29,15 @@ Thumbs.db
 # temporary files written by the charpie server (atomic save)
 .*.charpie.*.tmp
 
-# 各自の図（共有するのは見本の mae_example.charpie と deck_demo.charpie だけ）
+# 各自の図（共有するのは見本の mae_example / mae_talk / deck_demo だけ）
 diagrams/*
 !diagrams/mae_example.charpie
 !diagrams/deck_demo.charpie
+!diagrams/mae_talk.charpie
+!diagrams/charpie_guide.charpie
+# charpie_guide が参照する画像
+!diagrams/assets/
+diagrams/assets/*
+!diagrams/assets/guide/
 # deleted .charpie files (restorable from the UI)
 .trash/

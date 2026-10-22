@@ -1,0 +1,182 @@
+# スライドの見本：MAE（Masked Autoencoders Are Scalable Vision Learners, He et al. CVPR 2022）の論文紹介
+# 図の見本 mae_example.charpie を「全体像」のページに埋め込んでいる。set compat=pptx なので PowerPoint にもそのまま書き出せる
+set canvas=1280x720 gap=12 fontmin=12 fontmax=28 family=Calibri compat=pptx
+
+style title  { font: 34; weight: bold; halign: left; text: #0f172a; stroke: none; fill: none; }
+style muted  { font: 14; text: #64748b; stroke: none; fill: none; }
+style rule   { fill: #ea580c; stroke: none; }
+style card   { fill: #f8fafc; stroke: #cbd5e1; text: #1e293b; halign: left; valign: top; font: 20; pad: 18; }
+style key    { fill: #fff7ed; stroke: #ea580c; text: #7c2d12; font: 22; lw: 2; pad: 18; }
+style point  { fill: #f8fafc; stroke: #cbd5e1; text: #1e293b; font: 18; pad: 10; }
+style dark   { fill: #0f172a; stroke: none; text: #ffffff; }
+style cvis   { fill: #fdba74; stroke: none; }
+style cmask  { fill: #1e293b; stroke: #334155; }
+style pvis   { fill: #fce7f3; stroke: #db2777; lw: 2; }
+style pmask  { fill: #e2e8f0; stroke: none; }
+
+# 全ページ共通：タイトル、その下のオレンジの線、フッター、ページ番号
+layout default {
+  slot  title  "タイトル"                        at (48, 32) size 1184x72 .title
+  rect  rule                                     at (48, 116) size 72x6 .rule
+  text  footer "MAE 論文紹介 — Charpie サンプル"   at (48, 672) size 600x36 .muted halign=left
+  text  pageno "{page} / {pages}"                at (1092, 672) size 140x36 .muted halign=right
+}
+
+# 表紙：全面を紺にして、右にマスクされたパッチの模式図
+page cover "表紙" number=skip {
+  rect  bg     at (0, 0) size 1280x720 .dark
+  text  kicker "論文紹介"                                         at (80, 190) size 400x48 in=bg text=#fdba74 font=24 weight=bold halign=left
+  text  t1     "Masked Autoencoders Are\nScalable Vision Learners"  at (80, 252) size 660x150 in=bg text=#ffffff font=52 weight=bold halign=left
+  text  t2     "K. He, X. Chen, S. Xie, Y. Li, P. Dollár, R. Girshick — CVPR 2022"  at (80, 420) size 660x44 in=bg text=#cbd5e1 font=20 halign=left
+  text  t3     "Charpie サンプルスライド"                          at (80, 600) size 400x40 in=bg text=#64748b font=16 halign=left
+  rect  g00 at (784, 162) size 56x56 .cmask in=bg
+  rect  g01 at (852, 162) size 56x56 .cmask in=bg
+  rect  g02 at (920, 162) size 56x56 .cvis in=bg
+  rect  g03 at (988, 162) size 56x56 .cmask in=bg
+  rect  g04 at (1056, 162) size 56x56 .cmask in=bg
+  rect  g05 at (1124, 162) size 56x56 .cvis in=bg
+  rect  g10 at (784, 230) size 56x56 .cvis in=bg
+  rect  g11 at (852, 230) size 56x56 .cmask in=bg
+  rect  g12 at (920, 230) size 56x56 .cmask in=bg
+  rect  g13 at (988, 230) size 56x56 .cmask in=bg
+  rect  g14 at (1056, 230) size 56x56 .cmask in=bg
+  rect  g15 at (1124, 230) size 56x56 .cmask in=bg
+  rect  g20 at (784, 298) size 56x56 .cmask in=bg
+  rect  g21 at (852, 298) size 56x56 .cmask in=bg
+  rect  g22 at (920, 298) size 56x56 .cmask in=bg
+  rect  g23 at (988, 298) size 56x56 .cvis in=bg
+  rect  g24 at (1056, 298) size 56x56 .cmask in=bg
+  rect  g25 at (1124, 298) size 56x56 .cmask in=bg
+  rect  g30 at (784, 366) size 56x56 .cmask in=bg
+  rect  g31 at (852, 366) size 56x56 .cvis in=bg
+  rect  g32 at (920, 366) size 56x56 .cmask in=bg
+  rect  g33 at (988, 366) size 56x56 .cmask in=bg
+  rect  g34 at (1056, 366) size 56x56 .cvis in=bg
+  rect  g35 at (1124, 366) size 56x56 .cmask in=bg
+  rect  g40 at (784, 434) size 56x56 .cmask in=bg
+  rect  g41 at (852, 434) size 56x56 .cmask in=bg
+  rect  g42 at (920, 434) size 56x56 .cmask in=bg
+  rect  g43 at (988, 434) size 56x56 .cmask in=bg
+  rect  g44 at (1056, 434) size 56x56 .cmask in=bg
+  rect  g45 at (1124, 434) size 56x56 .cvis in=bg
+  rect  g50 at (784, 502) size 56x56 .cvis in=bg
+  rect  g51 at (852, 502) size 56x56 .cmask in=bg
+  rect  g52 at (920, 502) size 56x56 .cmask in=bg
+  rect  g53 at (988, 502) size 56x56 .cvis in=bg
+  rect  g54 at (1056, 502) size 56x56 .cmask in=bg
+  rect  g55 at (1124, 502) size 56x56 .cmask in=bg
+  hide  title rule footer pageno
+}
+
+page bg "背景" {
+  title "背景：BERT の成功を画像にも"
+  list  why at (48, 150) size 560x260 font=24 {
+    - 言語では BERT が大成功
+      - 文の一部を隠して当てる事前学習
+    - 画像でも同じ発想は試されてきた
+      - しかし教師あり学習に及ばなかった
+    - **言語と画像は何が違うのか？**
+  }
+  round msg  "画像は冗長 → **大部分を隠す**と\n全体を理解しないと解けない課題になる"  at (48, 446) size 560x120 .key
+  round d1   "**① モデルの構造**\nCNN にはマスクを表すトークンを入れにくい\n→ ViT の登場で解決"        at (660, 150) size 572x128 .card
+  round d2   "**② 情報の密度**\n単語は意味が詰まっているが、画像は冗長\n→ 隣のパッチから補間できてしまう"  at (660, 294) size 572x128 .card
+  round d3   "**③ デコーダの役割**\n当てるのは単語（高次）ではなく画素（低次）\n→ デコーダの設計が効く"     at (660, 438) size 572x128 .card
+}
+
+page overview "全体像" {
+  title "提案：非対称なエンコーダ・デコーダ"
+  image fig "MAE の概要図" at (48, 140) size 1184x420 src="mae_example.charpie"
+  round q1  "Encoder は見えている\n25% のパッチだけを処理"   at (48, 576) size 376x80 .point
+  round q2  "Decoder は軽量で\n事前学習のときだけ使う"       at (452, 576) size 376x80 .point
+  round q3  "下流タスクでは\nEncoder だけを使う"            at (856, 576) size 376x80 .point
+}
+
+page mask "マスク率" {
+  title "なぜ 75% も隠すのか"
+  rect  p00 at (96, 160) size 48x48 .pmask
+  rect  p01 at (156, 160) size 48x48 .pmask
+  rect  p02 at (216, 160) size 48x48 .pvis
+  rect  p03 at (276, 160) size 48x48 .pmask
+  rect  p04 at (336, 160) size 48x48 .pmask
+  rect  p05 at (396, 160) size 48x48 .pvis
+  rect  p10 at (96, 220) size 48x48 .pvis
+  rect  p11 at (156, 220) size 48x48 .pmask
+  rect  p12 at (216, 220) size 48x48 .pmask
+  rect  p13 at (276, 220) size 48x48 .pmask
+  rect  p14 at (336, 220) size 48x48 .pmask
+  rect  p15 at (396, 220) size 48x48 .pmask
+  rect  p20 at (96, 280) size 48x48 .pmask
+  rect  p21 at (156, 280) size 48x48 .pmask
+  rect  p22 at (216, 280) size 48x48 .pmask
+  rect  p23 at (276, 280) size 48x48 .pvis
+  rect  p24 at (336, 280) size 48x48 .pmask
+  rect  p25 at (396, 280) size 48x48 .pmask
+  rect  p30 at (96, 340) size 48x48 .pmask
+  rect  p31 at (156, 340) size 48x48 .pvis
+  rect  p32 at (216, 340) size 48x48 .pmask
+  rect  p33 at (276, 340) size 48x48 .pmask
+  rect  p34 at (336, 340) size 48x48 .pvis
+  rect  p35 at (396, 340) size 48x48 .pmask
+  rect  p40 at (96, 400) size 48x48 .pmask
+  rect  p41 at (156, 400) size 48x48 .pmask
+  rect  p42 at (216, 400) size 48x48 .pmask
+  rect  p43 at (276, 400) size 48x48 .pmask
+  rect  p44 at (336, 400) size 48x48 .pmask
+  rect  p45 at (396, 400) size 48x48 .pvis
+  rect  p50 at (96, 460) size 48x48 .pvis
+  rect  p51 at (156, 460) size 48x48 .pmask
+  rect  p52 at (216, 460) size 48x48 .pmask
+  rect  p53 at (276, 460) size 48x48 .pvis
+  rect  p54 at (336, 460) size 48x48 .pmask
+  rect  p55 at (396, 460) size 48x48 .pmask
+  text  cap  "ピンク: 見える 25%　灰: 隠す 75%（模式図）"  at (96, 524) size 348x36 .muted
+  list  pts at (520, 160) size 712x220 font=24 {
+    - 言語（BERT）のマスク率は 15%
+      - 単語は情報が密で、少し隠すだけで難しい
+    - 画像は隣のパッチから補間できてしまう
+      - 低いマスク率では「ぼかしを直す」のに近い
+    - **75% 隠すと、物体や場面の理解が必要になる**
+  }
+  round res  "マスク率 75% 前後で、fine-tuning と\nlinear probing の両方が最もよい（論文 Fig. 5）"  at (520, 398) size 712x110 .key
+}
+
+page cost "効率と損失" {
+  title "効率：Encoder は見えているパッチだけを処理"
+  text  l1   "従来（全パッチ）"  at (48, 160) size 260x56 halign=right font=22 text=#475569
+  rect  b1   "196 トークン"      at (330, 160) size 784x56 fill=#e2e8f0 stroke=none text=#334155 font=22
+  text  l2   "MAE の Encoder"   at (48, 236) size 260x56 halign=right font=22 text=#7c2d12 weight=bold
+  rect  b2   "49"               at (330, 236) size 196x56 fill=#fed7aa stroke=#ea580c lw=2 text=#7c2d12 font=22 weight=bold
+  text  sp   "→ 事前学習が 3 倍以上高速、メモリも少ない"  at (550, 236) size 640x56 halign=left font=22 text=#1e293b
+  round dec  "**軽い Decoder**"                at (48, 336) size 560x230 .card font=24
+  text  dtx  "8 ブロック・512 次元\n1 トークンあたりの計算量は Encoder の 1 割未満\n下流タスクでは捨てる"  at (58, 392) size 530x120 in=dec font=22 halign=left valign=top
+  round los  "**損失は隠したパッチだけで計算**"  at (672, 336) size 560x230 .card font=24
+  text  eq   "$\mathcal{L} = \frac{1}{|M|} \sum_{i \in M} \| \hat{x}_i - x_i \|_2^2$"  at (692, 384) size 520x84 in=los font=30
+  text  ltx  "$M$：隠したパッチの集合\nパッチごとに正規化した画素を当てると精度が上がる"  at (682, 480) size 530x70 in=los font=20 halign=left valign=top
+}
+
+page result "結果" {
+  title "結果：ImageNet-1K の fine-tuning"
+  table acc at (48, 150) size 820x390 align=l,r,r,r font=22 {
+    | 事前学習             | ViT-B    | ViT-L    | ViT-H    |
+    |---------------------|---------:|---------:|---------:|
+    | なし（教師ありのみ） | 82.3     | 82.6     | 83.1     |
+    | DINO                | 82.8     | —        | —        |
+    | MoCo v3             | 83.2     | 84.1     | —        |
+    | BEiT                | 83.2     | 85.2     | —        |
+    | **MAE**             | **83.6** | **85.9** | **86.9** |
+  }
+  text  note "ImageNet-1K の top-1 精度（%）、入力 224px。数値は論文 Table 3 より"  at (48, 556) size 820x36 .muted halign=left
+  round big  "**モデルが大きいほど効く**\n教師ありは ViT-H で頭打ち、\nMAE は伸び続ける"  at (900, 150) size 332x186 .card fill=#fff7ed stroke=#ea580c text=#7c2d12 lw=2 valign=middle
+  round only "**ImageNet-1K だけで**\nViT-H（448px）が 87.8%\n外部データなしでは当時の最高"  at (900, 354) size 332x186 .card valign=middle
+}
+
+page summary "まとめ" {
+  title "まとめ"
+  list  sum at (48, 160) size 1184x240 font=28 {
+    - **75% を隠して画素を復元する**だけのシンプルな自己教師あり学習
+    - Encoder は見えているパッチだけを処理 → 大きなモデルでも速く学習できる
+    - ImageNet-1K だけで 87.8%、物体検出・セグメンテーションへの転移でも有効
+    - 課題：linear probing では対照学習（MoCo v3 など）に及ばない
+  }
+  round take "「たくさん隠す」ことが、画像の自己教師あり学習をスケールさせる鍵だった"  at (48, 440) size 1184x120 .dark font=28 weight=bold
+}

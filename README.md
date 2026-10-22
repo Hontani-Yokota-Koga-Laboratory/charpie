@@ -1,19 +1,77 @@
 # Charpie
 
-**テキストが正本**の概念図エディタ。キャンバスでドラッグしても、右のテキストを書き換えても、同じ 1 つの `.charpie` テキストが更新されます。
-重なり・文字のはみ出し・矢印の貫通を常時チェックし、ワンクリックで解消できます。
+**テキストが正本**の、概念図とスライドのエディタ。
+キャンバスでドラッグしても、テキストを書き換えても、AI エージェントが API を叩いても、同じ 1 つの `.charpie` ファイルが更新されます。
+
+- **図もスライドも同じ記法で** — `page` / `layout` を書けばスライドになり、ロゴ・帯・ページ番号のような共通部分は 1 回だけ書けば済みます
+- **崩れたらすぐ分かる** — 重なり・文字のはみ出し・矢印の貫通・ページからのはみ出しを常に検査し、`fix` で自動的に直せます
+- **そのまま使える形で書き出せる** — PDF / PowerPoint（図形・表・箇条書きのまま編集できる）/ TikZ（LaTeX 文書）/ SVG / PNG
+- **AI エージェントと一緒に作れる** — ブラウザ・ディスク上のファイル・HTTP API が常に同期するので、Claude Code に書かせた図をその場で見て直せます
+
+## デモ
+
+### スライド
+
+見本の [diagrams/mae_talk.charpie](diagrams/mae_talk.charpie)（MAE の論文紹介、7 枚）。2 枚目は下の図をそのまま埋め込んでいます。
+
+| | |
+|---|---|
+| ![表紙](docs/mae_talk_cover.png) | ![全体像](docs/mae_talk_overview.png) |
+| ![効率と損失](docs/mae_talk_cost.png) | ![結果](docs/mae_talk_result.png) |
+
+<details>
+<summary>このスライドの書き方（抜粋）</summary>
+
+```
+set canvas=1280x720 gap=12 family=Calibri compat=pptx
+
+layout default {                               # 全ページ共通
+  slot  title  "タイトル"           at (48, 32) size 1184x72 .title
+  rect  rule                        at (48, 116) size 72x6 .rule
+  text  pageno "{page} / {pages}"   at (1092, 672) size 140x36 .muted halign=right
+}
+
+page result "結果" {
+  title "結果：ImageNet-1K の fine-tuning"
+  table acc at (48, 150) size 820x390 align=l,r,r,r {
+    | 事前学習 | ViT-B    | ViT-L    | ViT-H    |
+    |---------|---------:|---------:|---------:|
+    | BEiT    | 83.2     | 85.2     | —        |
+    | **MAE** | **83.6** | **85.9** | **86.9** |
+  }
+  round big "**モデルが大きいほど効く**\n…" at (900, 150) size 332x186 .card
+}
+```
+
+</details>
+
+### 図
+
+見本の [diagrams/mae_example.charpie](diagrams/mae_example.charpie)（MAE の概要図）。
+
+![MAE の概要図](docs/mae_example.png)
+
+### UI
+
+<img width="1920" height="936" alt="image" src="https://github.com/user-attachments/assets/6dbd8a4b-af58-49bc-9a81-94afaf692c4b" />
+
+## はじめかた
 
 ```bash
 npm install
 npm run build
 npm run serve    # diagrams/ の *.charpie を同期しながら http://localhost:5173 で起動
 # 任意のディレクトリ: node dist-server/cli.js serve path/to/dir
-
-npm run dev      # 開発用（同じ API 付き。対象は $CHARPIE_DIR か ./diagrams）
-npm test
 ```
 
-`diagrams/` は各自の作業場で、見本の [diagrams/mae_example.charpie](diagrams/mae_example.charpie)（MAE の概要図）以外は git 管理しません（`.gitignore` 済み）。
+あとは Claude Code に頼むだけです。
+
+```
+models/ のモデルを、diagrams/mae_example.charpie を参考に概念図にして
+この論文の紹介スライドを、diagrams/mae_talk.charpie を参考に 6 枚くらいで作って
+```
+
+`diagrams/` は各自の作業場で、見本の `mae_example.charpie` / `mae_talk.charpie` / `deck_demo.charpie` 以外は git 管理しません（`.gitignore` 済み）。
 
 ## 人間が書いた説明
 - AI エージェントで概念図を書くためのツールです。
@@ -28,140 +86,78 @@ npm test
     - このアプリの共有はあくまで、「こういうの便利だったよ！」の共有に過ぎません。
     - （強いて言えば、すでにサンプルが作られている分、AIへの指示が少し楽かもしれません）
 
-## デモ
-
-見本の [diagrams/mae_example.charpie](diagrams/mae_example.charpie)（MAE の概要図）。`npm run serve` で開くとこの図が出ます。
-
-![MAE の概要図](docs/mae_example.png)
-
-### UI
-
-<img width="1920" height="936" alt="image" src="https://github.com/user-attachments/assets/6dbd8a4b-af58-49bc-9a81-94afaf692c4b" />
-
-
-## Claude Code 連携
-
-`charpie serve` 中はディスク上の `.charpie` とブラウザが双方向に同期され、`/api` から状態の取得・操作ができます。
-Claude Code はファイルを直接編集しても、`curl localhost:5173/api/...` で操作してもよく、
-PostToolUse hook（`charpie hook`）で編集のたびに重なり・はみ出しを検査させられます。→ [docs/claude-code.md](docs/claude-code.md)
-
-CLI:
+## スライド
 
 ```
-charpie serve [dir] [--port 5173] [--host]
-charpie check <file...> [--json]      # エラーがあれば exit 1
-charpie fix <file...>
-charpie export <file> --format svg|tikz [-o out]
-charpie hook                          # Claude Code PostToolUse hook
-```
-
-## DSL
-
-```
-# コメント
-set gap=12 grid=10 padding=8 fontmin=9 fontmax=18
-
-style accent { fill: #eef2ff; stroke: #6366f1; text: #312e81; }
-
-rect    api  "API Gateway"  at (120, 80) size 160x60 .accent
-trap    db   "Database"     at (120, 240) size 160x70 fill=#fef3c7
-round   grp  "グループ"      at (0, 0) size 400x300 valign=top
-rect    c1   "子"           at (20, 40) size 100x50 in=grp
-image   p    "病理パッチ"    at (440, 80) size 160x120 src="assets/patch.png" fit=cover
-
-user -> api "request"            # ->  <-  <->  --
-api.s -> db.n route=ortho        # ポート n/e/s/w
-api -> cache route=curve bend=40 dash=dashed
-```
-
-- 図形: `rect round ellipse diamond trap para hex text image`
-- 画像: `image` は `src=`（.charpie からの相対パスか URL）の画像を枠に描きます。`fit=contain|cover|fill`（既定 contain）。ラベルは代替テキストで描かれません。枠線は `stroke=` を付けたときだけ。
-  ブラウザでは **Ctrl+V で貼り付け / ファイルをドロップ / ツールバーの画像ボタン** で追加でき、画像は .charpie と同じフォルダの `assets/` に保存されます。SVG / PNG 書き出しには画像が埋め込まれ、TikZ は `\includegraphics`（graphicx）になります。
-- 図形属性: `fill stroke text lw dash font(auto|px) weight valign in overlap=allow skew radius opacity`
-- 矢印属性: `route(straight|curve|ortho) bend stroke lw dash text font`
-
-UI からの編集は該当箇所だけを書き換えるので、コメント・行順・桁揃えが保たれ、`git diff` が小さく保てます。
-
-### 表・箇条書き・図の埋め込み
-
-```
-table res at (80, 160) size 700x220 align=l,r {
-  | 手法     | 精度 (%) |
-  |----------|--------:|     # 見出しの区切り（:--: で寄せ）
-  | **提案** | **82.1** |     # セル全体を ** で囲むと太字。$...$ も使える
-}                             # cols=2,1（列幅比）· header=N · rules=booktabs|grid|none
-
-list pts at (40, 140) size 600x400 {
-  - 項目                      # - * 1. で始める、2 文字下げで入れ子
-    - 入れ子
+layout default {                         # 全ページ共通の帯・番号・タイトル枠
+  text pageno "{page} / {pages}" at (1100, 680) size 140x36
+  slot title "タイトル" at (40, 30) size 1200x70 font=36
 }
-
-image fig at (0, 0) size 600x300 src="overview.charpie"   # 別の図をそのまま描く（#ページID も可）
-```
-
-表と箇条書きは中身全体を 1 つの文字サイズで枠に合わせ、収まらなければ `check` がはみ出しとして報告します。
-
-ブラウザではダブルクリックで見たままの位置を編集できます。箇条書きは Enter で次の項目、Tab / Shift+Tab で入れ子、行頭で `- ` や `1. ` と打つとその場で記号になり、Ctrl+B で太字（テキスト図形に `- ` と打つと箇条書きに変わります）。表はセルを直接書き換え、Tab・Enter・矢印で移動、上のバーで行・列の追加削除と寄せ、スプレッドシートからの貼り付けで複数セルを一度に埋められます。どちらも書いた内容は `{ }` の中へ最小差分で書き戻され、`</>` ボタンで Markdown のまま編集にも切り替えられます。
-
-## スライド（ベータ）
-
-`page` / `layout` ブロックを書いたファイルはスライドになります（書かなければ今まで通りの 1 枚の図）。
-
-```
-set canvas=1280x720                      # ページの大きさ（既定 1280x720）。はみ出しは check で検出
-
-layout default {                         # 全ページ共通。layout= を書かないページに使われる
-  rect band at (0, 0) size 1280x12 fill=#4f46e5 stroke=none
-  text pageno "{page} / {pages}" at (1100, 680) size 140x30   # {page} {pages} {title} は埋められる
-  slot title "タイトル" at (40, 30) size 1200x70 font=36        # slot = ページが中身を入れる枠
-}
-
-layout two extends default {             # 継承：default の図形と枠を引き継いで足す
+layout two extends default {             # 継承して 2 段組に
   slot left  at (40, 120) size 580x540
   slot right list at (660, 120) size 580x540
 }
-
 page intro "はじめに" layout=two {
-  title "研究背景"                        # 枠を埋める（at / size / 属性を書けばこのページだけ上書き）
-  left "本文"
+  title "研究背景"
+  left  "本文"
   right {
-    - 箇条書きの枠は { } で
+    - 箇条書き
   }
-  rect a "自由配置" at (100, 300) size 200x80   # 普通の図形・矢印も置ける
-  hide pageno                            # このページだけレイアウトの図形を消す
 }
 ```
 
-- 共通部分はレイアウトに 1 回だけ書きます。ページではレイアウト由来の図形は薄く表示され、触れません。左の「レイアウト」から編集モードに入ると、そのレイアウトを使う全ページに反映されます。
-- 左のページ一覧で追加・複製・並べ替え（ドラッグ）・削除・レイアウト変更。空の枠はダブルクリックで埋められます。
-- 編集中も **PageUp / PageDown** でページを移動できます（何も選んでいなければ矢印キーと Home / End でも）。
-- **F5** で発表。PDF はメニューの「PDF（全ページ）」（サーバーがヘッドレス Chromium でベクター出力。未保存の編集も含む）か `charpie export deck.charpie -o deck.pdf`。
-- SVG / PNG / TikZ は表示中のページ単位。TikZ は「全ページ」で 1 つの LaTeX 文書（`lualatex` でコンパイル、日本語は `luatexja`）にもでき、各ページはスライドの大きさで切り取られます。埋め込んだ図も入ります。
-- 新規作成で「図」か「スライド」を選びます。スライドは標準のひな形か、既存のスライドと同じレイアウトで始められます。レイアウトは他のスライドから取り込めます（継承元とスタイルも一緒に、同じものは重複させません）。
-- CLI / API はページごとに検査します（`check` は全ページ、`--page ID` / `?page=ID` で 1 ページ）。
+- **共通部分はレイアウトに 1 回だけ。** ページはタイトルや本文の枠（slot）を埋めるだけです。レイアウトを直せば、それを使う全ページに反映されます。
+- **PowerPoint にそのまま渡せる。** 図形・矢印・表・箇条書きは PowerPoint の図形として出力され、受け取った人が普通に編集できます（数式と画像は画像）。`set compat=pptx` で Office にあるフォントだけに揃えれば、改行位置も charpie と同じになります。
+- **PDF / TikZ も全ページ。** PDF はヘッドレス Chromium によるベクター出力、TikZ は全ページを 1 つの LaTeX 文書（`lualatex` + `luatexja`）にします。
+- **既存の図をそのまま貼れる。** `image fig src="overview.charpie"` で別の図を埋め込めるので、論文用の図をスライドで使い回せます。
+- **表と箇条書きは Markdown で書けます。** ブラウザではダブルクリックして、表示されている位置のまま編集できます。
+- **発表もできます。** F5 で発表、PageUp / PageDown でページ移動。スマホではページを切り替えて閲覧でき、発表はスワイプで進みます。
+- ページ一覧での追加・複製・ドラッグでの並べ替え、ページ番号（表紙を数えない `number=skip` も可）、他のスライドからのレイアウトの取り込み。
 
-## 整合性チェック
+## 図
 
-| 検査 | 内容 |
-|---|---|
-| 重なり | 実際の輪郭（凸多角形, SAT）で判定。`gap` で最小間隔も |
-| 文字のはみ出し | `fontmin` でも収まらない / 固定 `font` で収まらない |
-| 親からのはみ出し | `in=` の子が親の外に出ている、親の文字が子に隠れる |
-| 貫通 | 矢印が無関係な図形を横切る、矢印ラベルが図形・他ラベルと重なる |
+- 図形は `rect round ellipse diamond trap para hex cross plus text image table list`。矢印は `-> <- <-> --`、`route=ortho|curve` で直角や曲線にできます。
+- ラベルの `$...$` は TeX の数式（MathJax）です。
+- 画像は Ctrl+V で貼り付けるか、ファイルをドロップして追加できます。
+- 日本語フォントと、Office 互換のフォントを同梱しています。
+- UI での編集は該当箇所だけを書き換えるので、コメント・行順・桁揃えが保たれ、`git diff` を小さく保てます。
 
-「すべて解消」は、最小移動での押し出し・親の拡張・図形の拡大・矢印の迂回（ortho / curve）を収束するまで繰り返します。
+記法の詳細 → [docs/syntax.md](docs/syntax.md)
 
-## 構成
+## Claude Code 連携
+
+`charpie serve` 中はディスク上の `.charpie` とブラウザが双方向に同期され、`/api` から状態の取得と操作ができます。
+Claude Code はファイルを直接編集しても、`curl localhost:5173/api/...` で操作しても構いません。ブラウザで選んだ図形は `/api/selection` で分かるので、「この箱をもう少し右に」のような指示が通じます。
+PostToolUse hook（`charpie hook`）を設定すれば、編集のたびに重なりやはみ出しを Claude 自身に検査させられます。→ [docs/claude-code.md](docs/claude-code.md)
+
+```
+charpie serve [dir] [--port 5173] [--host]
+charpie check <file...> [--json]       # 重なり・はみ出し・貫通（エラーがあれば exit 1）
+charpie fix <file...>                  # 最小移動で自動解消
+charpie measure <file...> [--json]     # 図形ごとの文字の実寸と、収まる最小サイズ（fit）
+charpie export <file> -o out.{svg,png,pdf,pptx,tex} [--page ID] [--scale 2]
+charpie hook                           # Claude Code の PostToolUse hook
+```
+
+スライドはページごとに検査されます（`--page ID` で 1 ページだけ）。
+
+## 開発
+
+```bash
+npm run dev        # Vite + 同じ API（対象: $CHARPIE_DIR か ./diagrams）
+npm test
+npm run typecheck
+```
 
 ```
 src/dsl/       parse.ts（耐エラー・位置情報付き）, patch.ts（最小差分の書き換え）
 src/geom/      輪郭・SAT・クリッピング・レイキャスト
 src/text/      計測・折り返し（日本語禁則）・フォントサイズ二分探索, blocks.ts（表・箇条書き）
-src/layout.ts  スタイル解決・矢印ルーティング
+src/layout.ts  スタイル解決・矢印ルーティング・図の埋め込み
 src/check/     check.ts（検査）, resolve.ts（自動解消）
 src/ops/       整列・等幅・等間隔
-src/export.ts  SVG / PNG / TikZ
+src/export.ts  SVG / PNG / TikZ、src/pptx.ts PowerPoint
 src/components Canvas / CodePanel (CodeMirror 6) / Inspector / Chrome / Pages（ページ一覧・発表）/ Tools（ツールバー・挿入パレット）
 src/remote.ts  サーバーとのライブ同期（SSE + 楽観ロック）
-server/        workspace（監視・読み書き）, api, core（操作）, measure（Inter 実測）, cli
+server/        workspace（監視・読み書き）, api, core（操作）, measure（フォント実測）, cli
 ```
