@@ -71,7 +71,7 @@ models/ のモデルを、diagrams/mae_example.charpie を参考に概念図に�
 この論文の紹介スライドを、diagrams/mae_talk.charpie を参考に 6 枚くらいで作って
 ```
 
-`diagrams/` は各自の作業場で、見本の `mae_example.charpie` / `mae_talk.charpie` / `deck_demo.charpie` 以外は git 管理しません（`.gitignore` 済み）。
+`diagrams/` は各自の作業場で、見本の `mae_example.charpie` / `mae_talk.charpie` / `charpie_guide.charpie` 以外は git 管理しません（`.gitignore` 済み）。
 
 ## 人間が書いた説明
 - AI エージェントでスライド・概念図を書くためのツールです。
